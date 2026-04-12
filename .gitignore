@@ -1,0 +1,77 @@
+# Test/run artifacts
+.checkpoints/
+.pytest_cache/
+
+# Logs and console outputs (Stata/R/Python)
+*.log
+*.smcl
+*.out
+*.err
+*.Rout
+*.Rout.fail
+nohup.out
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# hddid-stata: development-only files
+hddid-stata/_test_*.do
+hddid-stata/_test_*.log
+hddid-stata/_tmp*.do
+hddid-stata/tests/
+hddid-stata/AGENTS.md
+
+# Workspace directories not for GitHub
+_bmad/
+_bmad-output/
+.agent/
+.agents/
+.claude/
+.cursor/
+.factory/
+.kanban/
+.kiro/
+.planning/
+.specstory/
+.vscode/
+.windsurf/
+scikit-learn-main/
+sympy-master/
+superpowers-main/
+qte-master/
+lassopack-master/
+stata-mcp-folder/
+scripts/
+local_cache/
+docs/
+arXiv-2009.03151/
+hddid-stata-flat/
+hddid-stata-shadow-substring-worker45/
+开发中文件存放/
+开发中文件存放2/
+开发中文件存放3/
+审查/
+
+# Misc temp files at repo root
+*.dta
+*.rc
+*.csv
+*.pdf
+# Root-level temp do files (but keep hddid_example.do)
+/*.do
+!hddid_example.do
+0
+ls
+CLIME
+covinv
+$tmpdo
+' 'display raw=
+.tmp_*
+.codex-tmp-*
+tmp_*
+hddid_worker*
+

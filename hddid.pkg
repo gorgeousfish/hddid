@@ -1,0 +1,30 @@
+v 1
+d hddid: High-dimensional semiparametric DID for Stata
+d Based on Ning, Peng, and Tao (2024, Review of Economics and Statistics)
+d Distribution-Date: 2026-04-12
+d Dependencies: lassopack; Stata 16+; Python 3.7+ with numpy>=1.20 and scipy>=1.7 for multivariate x()
+d Install the Stata-side lasso dependency first with ssc install lassopack, replace
+d For ancillary hddid_example.do use net install hddid, from("/path/to/hddid-stata") all replace or net get hddid, from("/path/to/hddid-stata")
+d If Stata has not yet been bound to Python, first run set python_exec /path/to/python3
+d After install rerun python query; confirm which hddid, which hddid_p, which hddid_estat, which hddid_dgp1, which hddid_dgp2, findfile _hddid_main.ado, findfile _hddid_display.ado, findfile _hddid_estimate.ado, findfile _hddid_prepare_fold_covinv.ado, findfile _hddid_pst_cmdroles.ado, findfile _hddid_mata.ado, findfile _hddid_p_current_surface.ado, findfile _hddid_preflight_current_vectors.ado, findfile hddid_safe_probe.py, findfile hddid_clime.py, which lasso2, which cvlasso, which cvlassologit, and which lassologit before the first paper-baseline call
+d After that bundle check recover the installed walkthrough with findfile hddid_example.do and run do "`r(fn)'"
+f hddid.ado
+f hddid.sthlp
+f hddid_dgp1.ado
+f hddid_dgp1.sthlp
+f hddid_dgp2.ado
+f hddid_dgp2.sthlp
+f _hddid_main.ado
+f _hddid_display.ado
+f _hddid_estimate.ado
+f _hddid_prepare_fold_covinv.ado
+f _hddid_pst_cmdroles.ado
+f _hddid_mata.ado
+f hddid_p.ado
+f _hddid_p_current_surface.ado
+f _hddid_preflight_current_vectors.ado
+f hddid_estat.ado
+f hddid_clime.py
+f hddid_safe_probe.py
+f hddid_example.do
+f stata.toc
