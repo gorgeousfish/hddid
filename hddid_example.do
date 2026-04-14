@@ -5,10 +5,9 @@
 // =============================================================================
 //
 // Prerequisites:
-//   Stata 16+ with Python integration enabled
-//   Configure/verify the bridge before running:
-//     set python_exec /path/to/python3
-//     python query
+//   Stata 16+ with Python integration (auto-detected on most systems)
+//   Verify with: python query
+//   If not found: python search, then set python_exec <path>, permanently
 //   ssc install lassopack, replace
 //     (ships the default lasso2/cvlasso/cvlassologit commands)
 //     The documented propensity-recovery path can also invoke lassologit

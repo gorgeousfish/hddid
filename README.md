@@ -40,13 +40,9 @@ where $\beta$ is a $p$-dimensional parametric component (possibly $p > n$) and $
 ```stata
 * Install lassopack from SSC
 ssc install lassopack, replace
-
-* (Only needed for multivariate x) Bind Stata to Python if not yet configured
-set python_exec /path/to/python3
-
-* Verify Python bridge
-python query
 ```
+
+> **Python note:** When `x()` has more than one covariate, `hddid` calls Python for the CLIME precision matrix step. Stata 16+ auto-detects Python on most systems. To verify, run `python query`; if Python is not found, run `python search` to list available installations, then `set python_exec <path>, permanently` to bind one. See `help python` for details.
 
 ### Step 2: Install hddid
 

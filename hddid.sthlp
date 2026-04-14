@@ -394,7 +394,7 @@ a partial file subset.  The shipped bundle now includes {cmd:hddid.pkg} and
 {cmd:hddid_example.do} is an ancillary file rather than an ado/help entrypoint,
 users who also want that shipped walkthrough in their working directory should
 run {cmd:net install hddid, from("/path/to/hddid-stata") all replace} or
-{cmd:net get hddid, from("/path/to/hddid-stata")}.  If Stata has not yet been bound to a Python executable, first run {cmd:set python_exec /path/to/python3}.  After that install/fetch step, first verify that the installed sibling bundle resolves
+{cmd:net get hddid, from("/path/to/hddid-stata")}.  If Stata has not yet been bound to a Python executable, first verify Python with {cmd:python query}; if not found, run {cmd:python search} then {cmd:set python_exec} {it:<path>} {cmd:, permanently}.  After that install/fetch step, first verify that the installed sibling bundle resolves
 together with {cmd:which hddid}, {cmd:which hddid_dgp1},
 {cmd:which hddid_dgp2}, {cmd:which hddid_p},
 {cmd:which hddid_estat}, {cmd:findfile _hddid_main.ado},
@@ -1376,7 +1376,7 @@ for the missing-intercept ATT level.
 {title:Examples}
 
 {pstd}
-Before running the multi-{cmd:x()} examples below, first bind Stata to Python with {cmd:set python_exec /path/to/python3} if needed, verify Stata 16+
+Before running the multi-{cmd:x()} examples below, first verify Python with {cmd:python query} if needed; if not found, run {cmd:python search} then {cmd:set python_exec} {it:<path>} {cmd:, permanently}, verify Stata 16+
 Python integration with {cmd:python query}, and ensure {cmd:numpy>=1.20}
 and {cmd:scipy>=1.7} are installed.  The default examples below also use the
 internally estimated first-stage path, so they require {cmd:lassopack}'s
