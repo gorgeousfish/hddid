@@ -18,6 +18,7 @@ Journal of the American Statistical Association, 106(494), 594-607.
 __version__ = "1.0.0"
 
 import functools
+import hashlib
 import importlib.util
 import inspect
 import numpy as np
@@ -1615,6 +1616,47 @@ def _validate_multix_runtime_solver_contract(p):
                 )
             _validate_runtime_multix_probe_column_solution(result, p, j)
 
+    positive_lambda = 0.25
+    for Sigma in probe_sigmas:
+        A_ub = np.block([
+            [Sigma, -Sigma],
+            [-Sigma, Sigma],
+        ])
+        sigma_label = (
+            "identity"
+            if np.allclose(Sigma, np.eye(p, dtype=np.float64), rtol=0.0, atol=0.0)
+            else "nonidentity"
+        )
+        for j in range(p):
+            e_j = np.zeros(p, dtype=np.float64)
+            e_j[j] = 1.0
+            lam_ones = positive_lambda * np.ones(p, dtype=np.float64)
+            b_ub = np.concatenate([lam_ones + e_j, lam_ones - e_j])
+
+            result = _validate_runtime_solver_result(
+                _call_runtime_linprog_solver(
+                    solver,
+                    c=c,
+                    A_ub=A_ub,
+                    b_ub=b_ub,
+                    method="highs",
+                ),
+                "runtime LP solver",
+            )
+            _validate_linprog_result_contract(result, p, j, positive_lambda)
+            if not result.success:
+                raise RuntimeError(
+                    "runtime linprog multix probe reported success=False on a "
+                    f"positive-lambda {sigma_label} p={p} CLIME column problem "
+                    f"for column {j + 1}/{p} at lambda={positive_lambda:.6f}"
+                )
+            _validate_runtime_multix_positive_lambda_probe_column_solution(
+                result,
+                p,
+                j,
+                positive_lambda,
+            )
+
 
 def _coerce_numeric_matrix(name, value):
     """Coerce host matrix-like data to a rectangular float64 array."""
@@ -2034,6 +2076,24 @@ def _validate_runtime_multix_probe_column_solution(result, p, j):
             "inconsistent with the trivial CLIME column optimum for "
             f"column {j + 1}/{p}; expected {expected.tolist()} within "
             f"tolerance {solution_tol}, got {w.tolist()}"
+        )
+    return w
+
+
+def _validate_runtime_multix_positive_lambda_probe_column_solution(result, p, j, lam):
+    """Require the runtime probe to handle the positive-lambda CLIME shape."""
+    solution = _validate_linprog_solution_vector(result, p, j, lam)
+    expected = np.zeros(p, dtype=np.float64)
+    expected[j] = max(1.0 - float(lam), 0.0)
+    solution_tol = np.sqrt(np.finfo(np.float64).eps)
+    w = solution[:p] - solution[p:]
+    if not np.allclose(w, expected, rtol=0.0, atol=solution_tol):
+        raise RuntimeError(
+            "runtime linprog multix probe returned a solution vector "
+            "inconsistent with the positive-lambda CLIME column optimum for "
+            f"column {j + 1}/{p} at lambda={lam:.6f}; expected "
+            f"{expected.tolist()} within tolerance {solution_tol}, got "
+            f"{w.tolist()}"
         )
     return w
 
@@ -3973,16 +4033,13 @@ def hddid_clime_requires_scipy(tildex_matname, perturb=True):
         return False
 
     tildex = _validate_nonconstant_columns(matrix_label, tildex)
-    if _raw_second_moment_diagonal_precision_if_applicable(
-        tildex,
-        matrix_label=matrix_label,
-    ) is not None:
-        return False
 
-    # The scalar p=1 path has an exact analytic inverse. For p>1, however, the
-    # package contract only needs the CLIME + CV path once the raw retained
-    # operator is genuinely non-diagonal. An explicit non-SciPy runtime LP hook
-    # can still remove the hard SciPy dependency in that remaining case.
+    # The scalar p=1 path has an exact analytic inverse. For p>1, BUG-4426
+    # moved exact diagonal retained operators onto the same CLIME + CV contract
+    # as generic multivariate folds so __hddid_clime_effective_nfolds keeps the
+    # realized tuning metadata aligned with paper Eq. (4.2) and hddid-r. Only
+    # an explicit non-SciPy runtime LP hook can waive the SciPy dependency for
+    # those multivariate retained folds.
     del n, perturb
     if _multix_runtime_hook_makes_scipy_optional(p):
         return False
@@ -4046,7 +4103,14 @@ def _hddid_bridge_call_clime_solve(
         Macro.setLocal("_hddid_clime_call_reason", "cache_missing")
         raise ImportError(f"Cached module {canonical_module_name} not available for {module_path}")
 
-    if bool(getattr(module, "_hddid_safe_probe_only", 0)):
+    try:
+        source_hash = hashlib.sha1(module_path.read_bytes()).hexdigest()
+    except OSError:
+        Macro.setLocal("_hddid_clime_call_reason", "load_oserror")
+        raise
+
+    cached_hash = getattr(module, "_hddid_source_hash", None)
+    if bool(getattr(module, "_hddid_safe_probe_only", 0)) or cached_hash != source_hash:
         try:
             spec = _importlib_util.spec_from_file_location(canonical_module_name, module_path)
             if spec is None or spec.loader is None:
@@ -4061,6 +4125,7 @@ def _hddid_bridge_call_clime_solve(
                 full_module.__dict__,
             )
             setattr(full_module, "_hddid_safe_probe_only", 0)
+            setattr(full_module, "_hddid_source_hash", source_hash)
             sys.modules[canonical_module_name] = full_module
             sys.modules.pop(probe_name, None)
             module = full_module
@@ -4316,37 +4381,13 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         _log_progress(verbose, "CLIME: done.")
         return
 
-    if Theta_diag is not None:
-        Scalar = _optional_scalar_bridge_for_direct_python()
-        scalar_precleared = _scalar_precleared_for_solver(Scalar, scalar_name)
-        if _direct_call_can_skip_scalar_publish(Scalar, scalar_name):
-            Scalar = None
-            scalar_precleared = False
-        _log_progress(
-            verbose,
-            "CLIME: raw retained covariance is diagonal; using exact inverse and skipping CV.",
-        )
-        _log_progress(
-            verbose,
-            f"CLIME: writing {p}x{p} precision matrix to '{covinv_matname}'...",
-        )
-        _publish_precision_results(
-            Matrix,
-            Scalar,
-            covinv_matname,
-            Theta_diag,
-            0.0,
-            scalar_precleared=scalar_precleared,
-        )
-        _publish_auxiliary_scalar_flag(
-            Scalar,
-            "__hddid_clime_raw_feasible",
-            1.0,
-        )
-        _log_progress(verbose, "CLIME: done.")
-        return
-
-    # For p>1 the remaining non-diagonal folds stay on the CLIME + CV path.
+    # For p>1 the paper/R contract keeps the retained covariance inverse on the
+    # CLIME + CV path even when the raw second moment happens to be diagonal.
+    # The exact inverse can still reappear as the selected Omega, but the
+    # realized-fold metadata must record the CV tuning contract instead of a
+    # multivariate zero-fold shortcut.
+    if p > 1 and Sigma is None:
+        Sigma, _ = _compute_covariance(tildex, perturb=perturb)
     nfolds_cv = _validate_integer_scalar("nfolds_cv", nfolds_cv, minimum=2)
     random_state = _validate_optional_int(
         "random_state",

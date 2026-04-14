@@ -216,9 +216,11 @@ program define _hddid_pfc_clime_scipy_probe, rclass
         exec("if _module is None or _probe_only or _cached_hash != _source_hash:\n    _reload_spec = importlib.util.spec_from_file_location(_module_name, _module_path)\n    if _reload_spec is None or _reload_spec.loader is None:\n        raise ImportError(f'Unable to create import spec for {_module_path}')\n    _full_module = importlib.util.module_from_spec(_reload_spec)\n    exec(compile(_module_path.read_text(encoding='utf-8'), str(_module_path), 'exec'), _full_module.__dict__)\n    setattr(_full_module, '_hddid_safe_probe_only', 0)\n    setattr(_full_module, '_hddid_source_hash', _source_hash)\n    sys.modules[_module_name] = _full_module\n    sys.modules.pop(_probe_name, None)\n    _module = _full_module\n    _cached_hash = _source_hash\n    _probe_only = False"); ///
         _helper = getattr(_module, "hddid_clime_requires_scipy", None); ///
         _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; ///
+        _helper_generator = bool(_helper is not None and callable(_helper) and (inspect.isgeneratorfunction(_helper) or (_helper_call is not None and inspect.isgeneratorfunction(_helper_call)))); ///
         _helper_asyncgen = bool(_helper is not None and (inspect.isasyncgenfunction(_helper) or (_helper_call is not None and inspect.isasyncgenfunction(_helper_call)))); ///
         _helper_async = bool(_helper is not None and (inspect.iscoroutinefunction(_helper) or (_helper_call is not None and inspect.iscoroutinefunction(_helper_call)) or _helper_asyncgen)); ///
         (_ for _ in ()).throw(AttributeError("hddid_clime_requires_scipy() helper missing")) if _helper is None else None; ///
+        (_ for _ in ()).throw(TypeError("hddid_clime_requires_scipy() must be a synchronous callable, got generator function")) if (callable(_helper) and _helper_generator) else None; ///
         (_ for _ in ()).throw(TypeError(f"hddid_clime_requires_scipy() must be a synchronous callable, got {'async generator function' if _helper_asyncgen else 'async function'}")) if (callable(_helper) and _helper_async) else None; ///
         (_ for _ in ()).throw(TypeError(f"hddid_clime_requires_scipy() must be callable, got {type(_helper).__name__}")) if (not callable(_helper)) else None
     if _rc != 0 {
@@ -243,7 +245,7 @@ program define _hddid_pfc_clime_scipy_probe, rclass
         _helper_call = getattr(_helper, "__call__", None); ///
         _helper_positional = []; ///
         _helper_kwargs = {"perturb": True}; ///
-        exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept (TypeError, ValueError):\n    _helper_sig = None\nif _helper_sig is not None:\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_sig.parameters.values())\n    for _p in _helper_sig.parameters.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))\n_raw_needs = _helper(r'`tildex'', *_helper_positional, **_helper_kwargs)"); ///
+        exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept (TypeError, ValueError):\n    _helper_sig = None\nif _helper_sig is not None:\n    _helper_params = _helper_sig.parameters\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n    _helper_has_var_kw = any(_p.kind == inspect.Parameter.VAR_KEYWORD for _p in _helper_params.values())\n    for _p in _helper_params.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))\n    if 'perturb' in _helper_kwargs and not _helper_has_var_kw and 'perturb' not in _helper_params:\n        _helper_kwargs.pop('perturb')\n_raw_needs = _helper(r'`tildex'', *_helper_positional, **_helper_kwargs)"); ///
         _raw_needs_generator = bool(inspect.isgenerator(_raw_needs)); ///
         _raw_needs_asyncgen = bool(inspect.isasyncgen(_raw_needs)) if not _raw_needs_generator else False; ///
         _raw_needs_awaitable = bool(inspect.isawaitable(_raw_needs)) if not _raw_needs_generator and not _raw_needs_asyncgen else False; ///
@@ -297,14 +299,15 @@ program define _hddid_pfc_probe_fail_classify, rclass
         Macro.setLocal("_hddid_probe_reason", "cache_missing" if not _cache_ok else ""); ///
         _helper = None if not _cache_ok else getattr(_module, "hddid_clime_requires_scipy", None); ///
         _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; ///
+        _helper_generator = bool(_helper is not None and callable(_helper) and (inspect.isgeneratorfunction(_helper) or (_helper_call is not None and inspect.isgeneratorfunction(_helper_call)))); ///
         _helper_asyncgen = bool(_helper is not None and (inspect.isasyncgenfunction(_helper) or (_helper_call is not None and inspect.isasyncgenfunction(_helper_call)))); ///
         _helper_async = bool(_helper is not None and (inspect.iscoroutinefunction(_helper) or (_helper_call is not None and inspect.iscoroutinefunction(_helper_call)) or _helper_asyncgen)); ///
         Macro.setLocal("_hddid_probe_reason", "helper_missing" if _cache_ok and _helper is None else Macro.getLocal("_hddid_probe_reason")); ///
-        Macro.setLocal("_hddid_probe_reason", "helper_noncallable" if _cache_ok and _helper is not None and ((not callable(_helper)) or _helper_async) else Macro.getLocal("_hddid_probe_reason")); ///
+        Macro.setLocal("_hddid_probe_reason", "helper_noncallable" if _cache_ok and _helper is not None and ((not callable(_helper)) or _helper_generator or _helper_async) else Macro.getLocal("_hddid_probe_reason")); ///
         _raw_needs = None; ///
         _helper_positional = []; ///
         _helper_kwargs = {"perturb": True}; ///
-        exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept Exception:\n    pass\nelse:\n    _helper_params = _helper_sig.parameters\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n    for _p in _helper_params.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))") if Macro.getLocal("_hddid_probe_reason") == "" and callable(_helper) and not _helper_async else None; ///
+        exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept Exception:\n    pass\nelse:\n    _helper_params = _helper_sig.parameters\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n    _helper_has_var_kw = any(_p.kind == inspect.Parameter.VAR_KEYWORD for _p in _helper_params.values())\n    for _p in _helper_params.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))\n    if 'perturb' in _helper_kwargs and not _helper_has_var_kw and 'perturb' not in _helper_params:\n        _helper_kwargs.pop('perturb')") if Macro.getLocal("_hddid_probe_reason") == "" and callable(_helper) and not _helper_async else None; ///
         _probe_reason = Macro.getLocal("_hddid_probe_reason"); ///
         _raw_needs = _helper("`tildex'", *_helper_positional, **_helper_kwargs) if _probe_reason == "" else None; ///
         _raw_needs_generator = bool(inspect.isgenerator(_raw_needs)) if Macro.getLocal("_hddid_probe_reason") == "" else False; ///
@@ -338,11 +341,12 @@ program define _hddid_pfc_probe_fail_classify, rclass
             Macro.setLocal("_hddid_probe_reason", "cache_missing" if not _cache_ok else ""); ///
             _helper = None if not _cache_ok else getattr(_module, "hddid_clime_requires_scipy", None); ///
             _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; ///
+            _helper_generator = bool(_helper is not None and callable(_helper) and (inspect.isgeneratorfunction(_helper) or (_helper_call is not None and inspect.isgeneratorfunction(_helper_call)))); ///
             _helper_asyncgen = bool(_helper is not None and (inspect.isasyncgenfunction(_helper) or (_helper_call is not None and inspect.isasyncgenfunction(_helper_call)))); ///
             _helper_async = bool(_helper is not None and (inspect.iscoroutinefunction(_helper) or (_helper_call is not None and inspect.iscoroutinefunction(_helper_call)) or _helper_asyncgen)); ///
             Macro.setLocal("_hddid_probe_reason", "helper_missing" if _cache_ok and _helper is None else Macro.getLocal("_hddid_probe_reason")); ///
-            Macro.setLocal("_hddid_probe_reason", "helper_noncallable" if _cache_ok and _helper is not None and ((not callable(_helper)) or _helper_async) else Macro.getLocal("_hddid_probe_reason")); ///
-            exec("try:\n    _helper_positional = []\n    _helper_kwargs = {'perturb': True}\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    try:\n        _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\n    except Exception:\n        pass\n    else:\n        _helper_params = _helper_sig.parameters\n        _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n        for _p in _helper_params.values():\n            if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n                _helper_positional.append(_helper_kwargs.pop(_p.name))\n        if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop('perturb'))\n    _helper_result = _helper(\"`tildex'\", *_helper_positional, **_helper_kwargs)\n    _helper_result_generator = bool(inspect.isgenerator(_helper_result))\n    _helper_result_asyncgen = bool(inspect.isasyncgen(_helper_result)) if not _helper_result_generator else False\n    _helper_result_awaitable = bool(inspect.isawaitable(_helper_result)) if not _helper_result_generator and not _helper_result_asyncgen else False\n    _helper_result_close = getattr(_helper_result, \"close\", None) if _helper_result_generator else (getattr(_helper_result, \"aclose\", None) if _helper_result_asyncgen else (getattr(_helper_result, \"close\", None) if _helper_result_awaitable else None))\n    _helper_result_close_ret = _helper_result_close() if callable(_helper_result_close) else None\n    _helper_result_close_ret_close = getattr(_helper_result_close_ret, \"close\", None) if _helper_result_asyncgen else None\n    _helper_result_close_ret_close() if callable(_helper_result_close_ret_close) else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got generator {type(_helper_result).__name__}\")) if _helper_result_generator else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got async generator {type(_helper_result).__name__}\")) if _helper_result_asyncgen else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got awaitable {type(_helper_result).__name__}\")) if _helper_result_awaitable else None\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_nonbool\") if not isinstance(_helper_result, (bool, _np.bool_)) else None\nexcept ImportError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_importerror\")\nexcept OSError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_oserror\")\nexcept AttributeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_attributeerror\")\nexcept ValueError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_valueerror\")\nexcept TypeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_typeerror\")\nexcept RuntimeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_runtimeerror\")\nexcept Exception:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_exception\")\nelse:\n    Macro.setLocal(\"_hddid_probe_reason\", Macro.getLocal(\"_hddid_probe_reason\") or \"ok\")") if Macro.getLocal("_hddid_probe_reason") == "" else None
+            Macro.setLocal("_hddid_probe_reason", "helper_noncallable" if _cache_ok and _helper is not None and ((not callable(_helper)) or _helper_generator or _helper_async) else Macro.getLocal("_hddid_probe_reason")); ///
+            exec("try:\n    _helper_positional = []\n    _helper_kwargs = {'perturb': True}\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not inspect.isclass(_helper_partial_func) and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    try:\n        _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\n    except Exception:\n        pass\n    else:\n        _helper_params = _helper_sig.parameters\n        _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n        _helper_has_var_kw = any(_p.kind == inspect.Parameter.VAR_KEYWORD for _p in _helper_params.values())\n        for _p in _helper_params.values():\n            if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n                _helper_positional.append(_helper_kwargs.pop(_p.name))\n        if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop('perturb'))\n        if 'perturb' in _helper_kwargs and not _helper_has_var_kw and 'perturb' not in _helper_params:\n            _helper_kwargs.pop('perturb')\n    _helper_result = _helper(\"`tildex'\", *_helper_positional, **_helper_kwargs)\n    _helper_result_generator = bool(inspect.isgenerator(_helper_result))\n    _helper_result_asyncgen = bool(inspect.isasyncgen(_helper_result)) if not _helper_result_generator else False\n    _helper_result_awaitable = bool(inspect.isawaitable(_helper_result)) if not _helper_result_generator and not _helper_result_asyncgen else False\n    _helper_result_close = getattr(_helper_result, \"close\", None) if _helper_result_generator else (getattr(_helper_result, \"aclose\", None) if _helper_result_asyncgen else (getattr(_helper_result, \"close\", None) if _helper_result_awaitable else None))\n    _helper_result_close_ret = _helper_result_close() if callable(_helper_result_close) else None\n    _helper_result_close_ret_close = getattr(_helper_result_close_ret, \"close\", None) if _helper_result_asyncgen else None\n    _helper_result_close_ret_close() if callable(_helper_result_close_ret_close) else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got generator {type(_helper_result).__name__}\")) if _helper_result_generator else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got async generator {type(_helper_result).__name__}\")) if _helper_result_asyncgen else None\n    (_ for _ in ()).throw(TypeError(f\"hddid_clime_requires_scipy() must return synchronously, got awaitable {type(_helper_result).__name__}\")) if _helper_result_awaitable else None\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_nonbool\") if not isinstance(_helper_result, (bool, _np.bool_)) else None\nexcept ImportError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_importerror\")\nexcept OSError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_oserror\")\nexcept AttributeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_attributeerror\")\nexcept ValueError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_valueerror\")\nexcept TypeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_typeerror\")\nexcept RuntimeError:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_runtimeerror\")\nexcept Exception:\n    Macro.setLocal(\"_hddid_probe_reason\", \"helper_exception\")\nelse:\n    Macro.setLocal(\"_hddid_probe_reason\", Macro.getLocal(\"_hddid_probe_reason\") or \"ok\")") if Macro.getLocal("_hddid_probe_reason") == "" else None
         if _rc == 0 & "`_hddid_probe_reason'" != "" {
             return local reason "`_hddid_probe_reason'"
             exit
@@ -489,6 +493,7 @@ program define _hddid_prepare_fold_covinv, rclass
         di as error "  Reason: with p>1 and fewer than 2 retained rows, the paper's retained-sample precision target cannot support a multivariate covariance inverse and the hddid-r sugm() path is likewise undefined"
         exit 2001
     }
+        local _pfc_analytic_ok "0"
         if `p' == 1 {
             // Keep the scalar path simple; there is no off-diagonal storage
             // mode to preserve when x() has only one column.
@@ -498,50 +503,6 @@ program define _hddid_prepare_fold_covinv, rclass
             local _hddid_clime_effective = 0
             if "`verbose'" != "" {
                 di as text "  Fold `_k': single-x precision uses the analytic scalar inverse; Python CLIME skipped"
-            }
-        }
-        else if `p' < `_n_valid' {
-            // When p < n_valid the retained-sample covariance is full-rank
-            // and the analytic inverse luinv(Sigma_tildex) is well-defined.
-            // Use it directly instead of the CLIME L1-regularized path, which
-            // over-shrinks the precision matrix when Sigma is well-conditioned
-            // (low p relative to n) and introduces systematic debiasing bias.
-            // The CLIME path remains the default when p >= n_valid.
-            matrix `__hddid_covinv' = J(`p', `p', .)
-            capture mata: ///
-                _pfc_tx = st_matrix("`__hddid_tildex'"); ///
-                _pfc_n = rows(_pfc_tx); ///
-                _pfc_Sig = cross(_pfc_tx, _pfc_tx) / _pfc_n; ///
-                _pfc_cond = cond(_pfc_Sig); ///
-                if (_pfc_cond < 1e10 & !hasmissing(_pfc_Sig)) { ///
-                    _pfc_Om = luinv(_pfc_Sig); ///
-                    if (!hasmissing(_pfc_Om)) { ///
-                        st_matrix("`__hddid_covinv'", _pfc_Om); ///
-                        st_local("_pfc_analytic_ok", "1"); ///
-                    } ///
-                    else { ///
-                        st_local("_pfc_analytic_ok", "0"); ///
-                    } ///
-                } ///
-                else { ///
-                    st_local("_pfc_analytic_ok", "0"); ///
-                }
-            if _rc != 0 {
-                local _pfc_analytic_ok "0"
-            }
-            if "`_pfc_analytic_ok'" == "1" {
-                local _hddid_clime_effective = 0
-                if "`verbose'" != "" {
-                    di as text "  Fold `_k': p<n analytic inverse used; CLIME skipped (p=`p', n_valid=`_n_valid')"
-                }
-            }
-            else {
-                // Analytic inverse failed (ill-conditioned); fall through to CLIME
-                if "`verbose'" != "" {
-                    di as text "  Fold `_k': analytic inverse ill-conditioned; falling through to CLIME"
-                }
-                matrix `__hddid_covinv' = J(`p', `p', .)
-                matrix `__hddid_covinv'[1, 2] = .a
             }
         }
         if "`_pfc_analytic_ok'" != "1" & `p' > 1 {
@@ -566,7 +527,7 @@ program define _hddid_prepare_fold_covinv, rclass
                         local _hddid_probe_reason `"`r(reason)'"'
                     }
                     if inlist("`_hddid_probe_reason'", "helper_exception", "helper_importerror", "helper_oserror", "helper_attributeerror", "helper_valueerror", "helper_typeerror", "helper_runtimeerror") {
-                        capture noisily python: import functools, inspect, pathlib, sys; _module_path = pathlib.Path(r"`_hddid_pyscript'").resolve(); _module_name = r"`_hddid_py_module'"; _probe_name = "__hddid_probe__" + _module_name; _main_module = sys.modules.get(_module_name); _probe_module = sys.modules.get(_probe_name); _main_ok = _main_module is not None and pathlib.Path(str(getattr(_main_module, "__file__", ""))).resolve() == _module_path; _probe_ok = _probe_module is not None and pathlib.Path(str(getattr(_probe_module, "__file__", ""))).resolve() == _module_path; _module = _main_module if _main_ok else (_probe_module if _probe_ok else None); _helper = getattr(_module, "hddid_clime_requires_scipy", None) if _module is not None else None; _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; _helper_positional = []; _helper_kwargs = {'perturb': True}; exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept Exception:\n    pass\nelse:\n    _helper_params = _helper_sig.parameters\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n    for _p in _helper_params.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))") if _helper is not None else None; (_helper("`__hddid_tildex'", *_helper_positional, **_helper_kwargs) if _helper is not None else None)
+                        capture noisily python: import functools, inspect, pathlib, sys; _module_path = pathlib.Path(r"`_hddid_pyscript'").resolve(); _module_name = r"`_hddid_py_module'"; _probe_name = "__hddid_probe__" + _module_name; _main_module = sys.modules.get(_module_name); _probe_module = sys.modules.get(_probe_name); _main_ok = _main_module is not None and pathlib.Path(str(getattr(_main_module, "__file__", ""))).resolve() == _module_path; _probe_ok = _probe_module is not None and pathlib.Path(str(getattr(_probe_module, "__file__", ""))).resolve() == _module_path; _module = _main_module if _main_ok else (_probe_module if _probe_ok else None); _helper = getattr(_module, "hddid_clime_requires_scipy", None) if _module is not None else None; _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; _helper_positional = []; _helper_kwargs = {'perturb': True}; exec("try:\n    _helper_sig_target = _helper\n    _prefer_object_sig = isinstance(_helper, functools.partial)\n    if _prefer_object_sig:\n        _helper_partial_func = _helper.func\n        _helper_partial_call = getattr(_helper_partial_func, \"__call__\", None)\n        if _helper_partial_call is not None and _helper_partial_call is not _helper_partial_func and not (inspect.isfunction(_helper_partial_func) or inspect.ismethod(_helper_partial_func) or inspect.isbuiltin(_helper_partial_func) or inspect.isroutine(_helper_partial_func)):\n            try:\n                _helper_sig_target = functools.partial(_helper_partial_call, *(_helper.args or ()), **(_helper.keywords or {}))\n                _prefer_object_sig = False\n            except TypeError:\n                _helper_sig_target = _helper\n                _prefer_object_sig = True\n    if not _prefer_object_sig and _helper_call is not None and _helper_call is not _helper and not (inspect.isfunction(_helper) or inspect.ismethod(_helper) or inspect.isbuiltin(_helper) or inspect.isroutine(_helper)):\n        _helper_sig_target = _helper_call\n    _helper_sig = ((_module._resolve_bridge_signature(_helper)) or inspect.signature(_helper_sig_target, follow_wrapped=False)) if callable(getattr(_module, \"_resolve_bridge_signature\", None)) else inspect.signature(_helper_sig_target, follow_wrapped=False)\nexcept Exception:\n    pass\nelse:\n    _helper_params = _helper_sig.parameters\n    _helper_has_var_pos = any(_p.kind == inspect.Parameter.VAR_POSITIONAL for _p in _helper_params.values())\n    _helper_has_var_kw = any(_p.kind == inspect.Parameter.VAR_KEYWORD for _p in _helper_params.values())\n    for _p in _helper_params.values():\n        if _p.kind == inspect.Parameter.POSITIONAL_ONLY and _p.name in _helper_kwargs:\n            _helper_positional.append(_helper_kwargs.pop(_p.name))\n    if _helper_has_var_pos and 'perturb' in _helper_kwargs:\n        _helper_positional.append(_helper_kwargs.pop('perturb'))\n    if 'perturb' in _helper_kwargs and not _helper_has_var_kw and 'perturb' not in _helper_params:\n        _helper_kwargs.pop('perturb')") if _helper is not None else None; (_helper("`__hddid_tildex'", *_helper_positional, **_helper_kwargs) if _helper is not None else None)
                     }
                     di as error "{bf:hddid}: CLIME sidecar failed the retained-sample SciPy-dependency probe in fold `_k'"
                     di as error "  File loaded from: `_hddid_pyscript'"
@@ -638,12 +599,14 @@ program define _hddid_prepare_fold_covinv, rclass
                     _module = _main_module if _main_ok else (_probe_module if _probe_ok else None); ///
                     _helper = getattr(_module, "hddid_clime_validate_solver_runtime", None) if _module is not None else None; ///
                     _helper_call = getattr(_helper, "__call__", None) if _helper is not None else None; ///
+                    _helper_generator = bool(_helper is not None and callable(_helper) and (inspect.isgeneratorfunction(_helper) or (_helper_call is not None and inspect.isgeneratorfunction(_helper_call)))); ///
                     _helper_asyncgen = bool(_helper is not None and (inspect.isasyncgenfunction(_helper) or (_helper_call is not None and inspect.isasyncgenfunction(_helper_call)))); ///
                     _helper_async = bool(_helper is not None and (inspect.iscoroutinefunction(_helper) or (_helper_call is not None and inspect.iscoroutinefunction(_helper_call)) or _helper_asyncgen)); ///
-                    _helper_sync = bool(_helper is not None and callable(_helper) and not _helper_async); ///
+                    _helper_sync = bool(_helper is not None and callable(_helper) and not _helper_generator and not _helper_async); ///
                     Macro.setLocal("_hsci_rth_p", str(1 if _helper is not None else 0)); ///
                     Macro.setLocal("_hsci_rth_c", str(1 if _helper_sync else 0)); ///
-                    Macro.setLocal("_hsci_rth_t", ("async generator function" if _helper_asyncgen else ("async function" if _helper_async else type(_helper).__name__)) if _helper is not None else "")
+                    Macro.setLocal("_hsci_rth_t", ("generator function" if _helper_generator else ("async generator function" if _helper_asyncgen else ("async function" if _helper_async else type(_helper).__name__))) if _helper is not None else ""); ///
+                    (_ for _ in ()).throw(TypeError("hddid_clime_validate_solver_runtime() must be a synchronous callable, got generator function")) if _helper_generator else None
                 if "`_hsci_rth_p'" == "1" & "`_hsci_rth_c'" == "1" {
                     capture python: ///
                         from sfi import Macro; import inspect, pathlib, sys; ///
@@ -752,67 +715,15 @@ program define _hddid_prepare_fold_covinv, rclass
             if `_clime_nfolds_cv' > `clime_nfolds_cv_requested' {
                 local _clime_nfolds_cv = `clime_nfolds_cv_requested'
             }
-            local _hddid_skip_cv_guard 0
-            if `_clime_nfolds_cv' < 2 & ///
-                !("`_hddid_py_clime_helper_present'" == "1" & ///
-                  "`_hddid_clime_needs_scipy'" == "1") {
-                tempname __hddid_rawdiag_nsmall_ok
-                tempname __hddid_rawdiag_nsmall_gap
-                tempname __hddid_rawdiag_nsmall_tol
-                capture scalar drop `__hddid_rawdiag_nsmall_ok'
-                capture scalar drop `__hddid_rawdiag_nsmall_gap'
-                capture scalar drop `__hddid_rawdiag_nsmall_tol'
-                capture mata: X = st_matrix("`__hddid_tildex'"); ///
-                    n = rows(X); ///
-                    rawdiag_ok = 0; ///
-                    diag_gap = .; ///
-                    diag_tol = 64 * epsilon(1); ///
-                    if (n >= 1) { ///
-                        col_scale = colmax(abs(X)); ///
-                        if (min(col_scale) > 0 & max(col_scale) < .) { ///
-                            Xs = X :/ (J(n, 1, 1) * col_scale); ///
-                            Sigma0 = quadcross(Xs, Xs) / n; ///
-                            sigma_diag = diagonal(Sigma0); ///
-                            offdiag = Sigma0 - diag(diagonal(Sigma0)); ///
-                            pair_scale = sqrt(abs(sigma_diag * sigma_diag')); ///
-                            pair_scale = pair_scale + (pair_scale :== 0); ///
-                            diag_gap = max(abs(offdiag) :/ pair_scale); ///
-                            omega_diag = J(rows(sigma_diag), 1, .); ///
-                            if (min(sigma_diag) > 0) { ///
-                                omega_diag = 1 :/ sigma_diag; ///
-                                omega_diag = (omega_diag :/ col_scale') :/ col_scale'; ///
-                            } ///
-                            if (!hasmissing(omega_diag) & ///
-                                min(omega_diag) > 0 & ///
-                                diag_gap <= diag_tol) { ///
-                                rawdiag_ok = 1; ///
-                            } ///
-                        } ///
-                    }; ///
-                    st_numscalar("`__hddid_rawdiag_nsmall_ok'", rawdiag_ok); ///
-                    st_numscalar("`__hddid_rawdiag_nsmall_gap'", diag_gap); ///
-                    st_numscalar("`__hddid_rawdiag_nsmall_tol'", diag_tol)
-                if _rc == 0 & scalar(`__hddid_rawdiag_nsmall_ok') == 1 {
-                    local _hddid_skip_cv_guard 1
-                }
-            }
-            if `_clime_nfolds_cv' < 2 & `_hddid_skip_cv_guard' == 0 {
-                // For p>1 the current shipped paper/R contract still uses the
-                // CLIME+CV path unless the retained raw second moment already
-                // defines the exact diagonal no-CV operator. Unless the helper
-                // explicitly says SciPy is still required, the solve-time
-                // operator contract itself gets the final say after the bridge
-                // returns.
-            }
-            if `_clime_nfolds_cv' < 2 & `_hddid_skip_cv_guard' == 0 {
+            if `_clime_nfolds_cv' < 2 {
                 di as error "{bf:hddid}: fold `_k' has too few valid observations for CLIME CV"
                 di as error "  n_valid=`_n_valid', requested nfolds_cv=`clime_nfolds_cv_requested'"
                 di as error "  CLIME CV requires at least 2 observations per validation fold under equal-block splitting"
-                di as error "  This requires n_valid >= 4 before CLIME tuning can proceed"
+                di as error "  This requires n_valid >= 4 before multivariate retained-sample CLIME tuning can proceed"
+                di as error "  Reason: the paper's equation (4.2) and the hddid-r reference keep p>1 retained covariances on the CLIME + CV path even when the raw second moment is exactly diagonal"
                 exit 2001
             }
             if "`verbose'" != "" & ///
-                `_hddid_skip_cv_guard' == 0 & ///
                 `_clime_nfolds_cv' < `clime_nfolds_cv_requested' {
                 di as text "  Fold `_k': CLIME CV folds reduced from `clime_nfolds_cv_requested' to `_clime_nfolds_cv' to avoid singleton validation folds"
             }
@@ -889,18 +800,23 @@ program define _hddid_prepare_fold_covinv, rclass
                 _probe_only = bool(getattr(_module, "_hddid_safe_probe_only", 0)) if _module is not None else False; ///
                 exec("try:\n    if (not _cache_ok) or _probe_only or _cached_hash != _source_hash:\n        _reload_spec = importlib.util.spec_from_file_location(_module_name, _module_path)\n        if _reload_spec is None or _reload_spec.loader is None:\n            raise ImportError(f'Unable to create import spec for {_module_path}')\n        _full_module = importlib.util.module_from_spec(_reload_spec)\n        exec(compile(_module_path.read_text(encoding='utf-8'), str(_module_path), 'exec'), _full_module.__dict__)\n        setattr(_full_module, '_hddid_safe_probe_only', 0)\n        setattr(_full_module, '_hddid_source_hash', _source_hash)\n        sys.modules[_module_name] = _full_module\n        sys.modules.pop(_probe_name, None)\n        _module = _full_module\n        _cached_hash = _source_hash\n        _cache_ok = True\n        _probe_only = False\nexcept ImportError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_importerror')\n    raise\nexcept OSError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_oserror')\n    raise\nexcept AttributeError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_attributeerror')\n    raise\nexcept ValueError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_valueerror')\n    raise\nexcept TypeError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_typeerror')\n    raise\nexcept RuntimeError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_runtimeerror')\n    raise\nexcept SyntaxError:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_syntaxerror')\n    raise\nexcept Exception:\n    Macro.setLocal('_hddid_clime_call_reason', 'load_exception')\n    raise"); ///
                 _bridge = None if Macro.getLocal("_hddid_clime_call_reason") != "" else getattr(_module, "_hddid_bridge_call_clime_solve", None); ///
-                _bridge_async = bool(_bridge is not None and (inspect.iscoroutinefunction(_bridge) or inspect.isasyncgenfunction(_bridge) or inspect.iscoroutinefunction(getattr(_bridge, "__call__", None)) or inspect.isasyncgenfunction(getattr(_bridge, "__call__", None)))); ///
-                Macro.setLocal("_hddid_clime_call_reason", "bridge_noncallable" if Macro.getLocal("_hddid_clime_call_reason") == "" and _bridge is not None and (not callable(_bridge) or _bridge_async) else Macro.getLocal("_hddid_clime_call_reason")); ///
-                (_ for _ in ()).throw(TypeError(f"_hddid_bridge_call_clime_solve must be a synchronous callable, got {'async generator function' if inspect.isasyncgenfunction(_bridge) or inspect.isasyncgenfunction(getattr(_bridge, '__call__', None)) else 'async function'}")) if Macro.getLocal("_hddid_clime_call_reason") == "bridge_noncallable" and _bridge_async else None; ///
-                (_ for _ in ()).throw(TypeError(f"_hddid_bridge_call_clime_solve must be callable, got {type(_bridge).__name__}")) if Macro.getLocal("_hddid_clime_call_reason") == "bridge_noncallable" and not _bridge_async else None; ///
+                _bridge_call = getattr(_bridge, "__call__", None) if _bridge is not None else None; ///
+                _bridge_generator = bool(_bridge is not None and callable(_bridge) and (inspect.isgeneratorfunction(_bridge) or (_bridge_call is not None and inspect.isgeneratorfunction(_bridge_call)))); ///
+                _bridge_async = bool(_bridge is not None and (inspect.iscoroutinefunction(_bridge) or inspect.isasyncgenfunction(_bridge) or inspect.iscoroutinefunction(_bridge_call) or inspect.isasyncgenfunction(_bridge_call))); ///
+                Macro.setLocal("_hddid_clime_call_reason", "bridge_noncallable" if Macro.getLocal("_hddid_clime_call_reason") == "" and _bridge is not None and (not callable(_bridge) or _bridge_generator or _bridge_async) else Macro.getLocal("_hddid_clime_call_reason")); ///
+                (_ for _ in ()).throw(TypeError("_hddid_bridge_call_clime_solve must be a synchronous callable, got generator function")) if Macro.getLocal("_hddid_clime_call_reason") == "bridge_noncallable" and _bridge_generator else None; ///
+                (_ for _ in ()).throw(TypeError(f"_hddid_bridge_call_clime_solve must be a synchronous callable, got {'async generator function' if inspect.isasyncgenfunction(_bridge) or inspect.isasyncgenfunction(_bridge_call) else 'async function'}")) if Macro.getLocal("_hddid_clime_call_reason") == "bridge_noncallable" and _bridge_async else None; ///
+                (_ for _ in ()).throw(TypeError(f"_hddid_bridge_call_clime_solve must be callable, got {type(_bridge).__name__}")) if Macro.getLocal("_hddid_clime_call_reason") == "bridge_noncallable" and not _bridge_generator and not _bridge_async else None; ///
                 _obj = None if Macro.getLocal("_hddid_clime_call_reason") != "" else (_bridge if callable(_bridge) else (None if _probe_only else getattr(_module, "hddid_clime_solve", None))); ///
                 _obj_call = getattr(_obj, "__call__", None) if Macro.getLocal("_hddid_clime_call_reason") == "" and _obj is not None else None; ///
+                _obj_generator = bool(_obj is not None and callable(_obj) and (inspect.isgeneratorfunction(_obj) or (_obj_call is not None and inspect.isgeneratorfunction(_obj_call)))) if Macro.getLocal("_hddid_clime_call_reason") == "" else False; ///
                 _obj_async = bool(_obj is not None and (inspect.iscoroutinefunction(_obj) or inspect.isasyncgenfunction(_obj) or inspect.iscoroutinefunction(_obj_call) or inspect.isasyncgenfunction(_obj_call))) if Macro.getLocal("_hddid_clime_call_reason") == "" else False; ///
                 Macro.setLocal("_hddid_clime_call_reason", "solve_missing" if Macro.getLocal("_hddid_clime_call_reason") == "" and _obj is None else Macro.getLocal("_hddid_clime_call_reason")); ///
                 Macro.setLocal("_hddid_clime_call_reason", "solve_noncallable" if Macro.getLocal("_hddid_clime_call_reason") == "" and _obj is not None and not callable(_obj) else Macro.getLocal("_hddid_clime_call_reason")); ///
-                Macro.setLocal("_hddid_clime_call_reason", "solve_typeerror" if Macro.getLocal("_hddid_clime_call_reason") == "" and _obj_async else Macro.getLocal("_hddid_clime_call_reason")); ///
+                Macro.setLocal("_hddid_clime_call_reason", "solve_typeerror" if Macro.getLocal("_hddid_clime_call_reason") == "" and (_obj_generator or _obj_async) else Macro.getLocal("_hddid_clime_call_reason")); ///
                 (_ for _ in ()).throw(AttributeError("hddid_clime_solve entry point missing")) if Macro.getLocal("_hddid_clime_call_reason") == "solve_missing" else None; ///
                 (_ for _ in ()).throw(TypeError(f"hddid_clime_solve must be callable, got {type(_obj).__name__}")) if Macro.getLocal("_hddid_clime_call_reason") == "solve_noncallable" else None; ///
+                (_ for _ in ()).throw(TypeError("hddid_clime_solve must be a synchronous callable, got generator function")) if Macro.getLocal("_hddid_clime_call_reason") == "solve_typeerror" and _obj_generator else None; ///
                 (_ for _ in ()).throw(TypeError(f"hddid_clime_solve must be a synchronous callable, got {'async generator function' if inspect.isasyncgenfunction(_obj) or inspect.isasyncgenfunction(_obj_call) else 'async function'}")) if Macro.getLocal("_hddid_clime_call_reason") == "solve_typeerror" and _obj_async else None; ///
                 _solve_kwargs = {'nfolds_cv': `_clime_nfolds_cv', 'nlambda': `clime_nlambda_requested', 'lambda_min_ratio': `clime_lambda_min_ratio', 'random_state': `_clime_random_state', 'perturb': True, 'parallel': False, 'nproc': None`_hddid_clime_verbose_kw'} if Macro.getLocal("_hddid_clime_call_reason") == "" else None; ///
                 _dispatch_bridge_call = getattr(_module, "_dispatch_bridge_runtime_call", None) if Macro.getLocal("_hddid_clime_call_reason") == "" else None; ///
@@ -1503,32 +1419,20 @@ program define _hddid_prepare_fold_covinv, rclass
                     exit 198
                 }
             }
-            local _clime_zero_diag_shortcut 0
-            local _clime_zero_raw_scaleop 0
-            if `_clime_nfolds_cv_realized' == 0 & ///
-                scalar(`__hddid_covinv_rawdiagshort') == 1 {
-                local _clime_zero_diag_shortcut 1
-            }
-            if `_clime_nfolds_cv_realized' == 0 & ///
-                scalar(`__hddid_covinv_rawscaleop_ok') == 1 {
-                local _clime_zero_raw_scaleop 1
-            }
-            if (`_clime_nfolds_cv_realized' < 2 | ///
+            if `_clime_nfolds_cv_realized' < 2 | ///
                 `_clime_nfolds_cv_realized' != floor(`_clime_nfolds_cv_realized') | ///
-                `_clime_nfolds_cv_realized' > `_clime_nfolds_cv') & ///
-                `_clime_zero_diag_shortcut' == 0 & ///
-                `_clime_zero_raw_scaleop' == 0 {
+                `_clime_nfolds_cv_realized' > `_clime_nfolds_cv' {
                 di as error "{bf:hddid}: CLIME sidecar reported an invalid realized CV fold count in fold `_k'"
                 if `_clime_nfolds_cv_realized' == 0 {
                     di as error "  The sidecar reported zero realized CV folds on a multivariate retained-sample CLIME solve"
-                    di as error "  p>1 CLIME tuning requires a realized fold count in [2, `_clime_nfolds_cv'] unless the returned raw-second-moment operator itself certifies either the exact diagonal shortcut or the exact raw Sigma_tildex * Omega = I operator shortcut"
+                    di as error "  p>1 CLIME tuning requires a realized fold count in [2, `_clime_nfolds_cv']"
                     di as error "  max |offdiag(Sigma_tildex)| = " ///
                         %12.4e scalar(`__hddid_covinv_feas_cap')
                     di as error "  pair-scale diagonal gap   = " ///
                         %12.4e scalar(`__hddid_covinv_diag_gap')
                     di as error "  diagonal shortcut tol     = " ///
                         %12.4e scalar(`__hddid_covinv_diag_tol')
-                    di as error "  Reason: equation (4.2) only needs the retained-sample covariance inverse; a zero-fold shortcut is valid when the returned raw operator itself already certifies the retained inverse contract, even if the exact operator is non-diagonal"
+                    di as error "  Reason: equation (4.2) and the hddid-r CLIME path keep multivariate retained covariances on the CLIME + CV contract even when the selected precision matrix equals the exact raw inverse"
                 }
                 else {
                     di as error "  p>1 CLIME tuning requires a realized fold count in [2, `_clime_nfolds_cv']"

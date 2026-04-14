@@ -1871,9 +1871,32 @@ def main():
 
     main_module = sys.modules.get(module_name)
     probe_module = sys.modules.get(probe_name)
-    main_ok = main_module is not None and pathlib.Path(str(getattr(main_module, "__file__", ""))).resolve() == module_path
-    probe_ok = probe_module is not None and pathlib.Path(str(getattr(probe_module, "__file__", ""))).resolve() == module_path
-    module = main_module if main_ok else (probe_module if probe_ok else (main_module if main_module is not None else probe_module))
+    main_ok = (
+        main_module is not None
+        and pathlib.Path(str(getattr(main_module, "__file__", ""))).resolve()
+        == module_path
+    )
+    probe_ok = (
+        probe_module is not None
+        and pathlib.Path(str(getattr(probe_module, "__file__", ""))).resolve()
+        == module_path
+    )
+    probe_only_cached = bool(
+        probe_ok and getattr(probe_module, "_hddid_safe_probe_only", 0)
+    )
+    module = (
+        probe_module
+        if probe_only_cached
+        else (
+            main_module
+            if main_ok
+            else (
+                probe_module
+                if probe_ok
+                else (main_module if main_module is not None else probe_module)
+            )
+        )
+    )
 
     module_file = getattr(module, "__file__", None) if module is not None else None
     cached_path = pathlib.Path(module_file).resolve() if module_file else None
@@ -1898,7 +1921,13 @@ def main():
         or cached_scipy_opt_file != scipy_opt_file
         or cached_scipy_opt_id != scipy_opt_id
     )
-    needs_reload = module is None or cached_path != module_path or cached_hash != source_hash or dep_changed
+    needs_reload = (
+        module is None
+        or cached_path != module_path
+        or cached_hash != source_hash
+        or dep_changed
+        or not bool(getattr(module, "_hddid_safe_probe_only", 0))
+    )
 
     if needs_reload:
         spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -2206,7 +2235,12 @@ def main():
             if hasattr(probe_sfi, "SFIToolkit"):
                 module.__dict__.setdefault("SFIToolkit", getattr(probe_sfi, "SFIToolkit"))
 
-        exec(compile(probe_mod, str(module_path), "exec"), module.__dict__)
+        # Execute the sanitized probe module under the same read-only SFI
+        # guard used for runtime helper calls so top-level imports/aliases such
+        # as `WRITE = Scalar.setValue` cannot freeze a writable Stata handle
+        # into the probe-only namespace before preflight begins.
+        with _probe_guarded_sfi(module):
+            exec(compile(probe_mod, str(module_path), "exec"), module.__dict__)
         setattr(module, "_hddid_safe_probe_only", 1)
     else:
         setattr(module, "_hddid_safe_probe_only", 1 if bool(getattr(module, "_hddid_safe_probe_only", 0)) else 0)
@@ -2240,6 +2274,14 @@ def main():
         sys.modules[module_name] = module
     obj = getattr(module, "hddid_clime_solve", None)
     call = getattr(obj, "__call__", None) if obj is not None else None
+    generator_solver = bool(
+        obj is not None
+        and callable(obj)
+        and (
+            inspect.isgeneratorfunction(obj)
+            or (call is not None and inspect.isgeneratorfunction(call))
+        )
+    )
     async_generator_solver = bool(
         obj is not None
         and callable(obj)
@@ -2261,14 +2303,18 @@ def main():
     Macro.setLocal("_hddid_py_clime_present", str(1 if obj is not None else 0))
     Macro.setLocal(
         "_hddid_py_clime_callable",
-        str(1 if callable(obj) and not async_solver else 0),
+        str(1 if callable(obj) and not generator_solver and not async_solver else 0),
     )
     Macro.setLocal(
         "_hddid_py_clime_type",
         (
-            "async generator function"
-            if async_generator_solver
-            else ("async function" if async_solver else type(obj).__name__)
+            "generator function"
+            if generator_solver
+            else (
+                "async generator function"
+                if async_generator_solver
+                else ("async function" if async_solver else type(obj).__name__)
+            )
         ),
     )
     if probe_only:
