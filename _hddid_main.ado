@@ -1,6 +1,3 @@
-*! version 1.0.0
-*! hddid
-
 capture program drop _hddid_probe_pkgdir_from_context
 capture program drop _hddid_canonical_pkgdir
 capture program drop _hddid_resolve_pkgdir

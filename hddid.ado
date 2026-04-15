@@ -1,6 +1,3 @@
-*! version 1.0.0
-*! hddid
-
 capture program drop _hddid_wrap_drop_main
 program define _hddid_wrap_drop_main
     version 16

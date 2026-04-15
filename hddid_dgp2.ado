@@ -1,7 +1,3 @@
-*! version 1.0.0  2026-02-24
-*! DGP2: Heteroscedastic + Correlated Covariates
-*! Based on Ning, Peng, and Tao (2024) Section 5
-
 // Source-loading this file should publish only the public hddid_dgp2 command.
 // The current DGP2 path is self-contained and does not need legacy resolver
 // helpers on the caller-visible program surface.

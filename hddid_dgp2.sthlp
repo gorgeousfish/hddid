@@ -190,100 +190,22 @@ dependent variable passed to {cmd:hddid}.
 {p_end}
 
 {phang}
-A shipped DGP2/Tri walkthrough handoff is: generate the sample with {cmd:hddid_dgp2, n(500) p(50) seed(54321) rho(0.5) clear}, rebuild the public covariate list with {cmd:unab x_vars : x*}, and then run {cmd:hddid deltay, treat(treat) x(`x_vars') z(z)} with {cmd:method("Tri") q(16)} plus the shipped five-point audit grid {cmd:z0(-1 -0.5 0 0.5 1)}, {cmd:K(3)}, the shipped 90% inference level {cmd:alpha(0.1)}, the shipped bootstrap count {cmd:nboot(1000)}, and the shipped estimator-side reproducibility seed {cmd:seed(42)}.  That is the positive user-facing pairing behind the shipped walkthrough when users want the package's shipped DGP2/Tri walkthrough rather than only a generator draw, and it keeps the reported finite-grid nonparametric surface pinned to the same public audit points used in the example/help truth checks on the package-default public AR(1) path {cmd:rho(0.5)} rather than a paper-fixed rho value.  The shipped five-point {cmd:z0(-1 -0.5 0 0.5 1)} list is this package audit grid rather than a paper-fixed evaluation set.  Use that shipped five-point grid only when the realized retained {cmd:z} support contains all five audit points; otherwise choose an in-support {cmd:z0()} list or omit {cmd:z0()} so {cmd:hddid} uses the retained support points directly.
-Under {cmd:method(Tri)}, keep that explicit {cmd:z0()} grid inside the current retained {cmd:z} support.
-if any requested {cmd:z0()} point leaves that retained support, {cmd:hddid} fails closed instead of extrapolating the support-normalized Tri basis.
-That retained-support guard is a package-specific Stata Tri rule: this walkthrough uses a caller-supplied/package audit grid rather than a paper-fixed evaluation set, and the maintained R cross-fit sources here do not expose an executable {cmd:method(Tri)} fail-close interface.
+A shipped DGP2/Tri walkthrough: generate with
+{cmd:hddid_dgp2, n(500) p(50) seed(54321) rho(0.5) clear}, then run
+{cmd:hddid deltay, treat(treat) x(`x_vars') z(z) method("Tri") q(16) z0(-1 -0.5 0 0.5 1) K(3) alpha(0.1) nboot(1000) seed(42)}.
+Under {cmd:method(Tri)}, keep {cmd:z0()} inside the retained z support.
 {p_end}
 
 {phang}
-Following the paper, the post-period shocks {cmd:eps0} and {cmd:eps1} are both
-standard normal.  The distinctive DGP2 feature is the multiplicative baseline
-term, which makes the observed base-period level outcome heteroskedastic before
-differencing.
+The distinctive DGP2 feature is the multiplicative baseline term
+{cmd:Y(i,0) = eps_tilde * (z + x1) / sqrt(2)}, which makes the base-period
+outcome heteroskedastic before differencing.
 {p_end}
 
 {phang}
-The public DGP2 command is self-contained enough to remain callable after an
-absolute-path source-run even when the working directory is elsewhere, because
-the shipped ado builds the covariance matrix inline and uses an internal
-{cmd:drawnorm} call instead of reloading any helper-side generator.  The
-shipped ado's embedded Section 5 path remains authoritative for the public
-DGP2 command.
-{p_end}
-
-{phang}
-Only the public variables {cmd:x1}-{cmd:xp}, {cmd:z}, {cmd:treat}, and
-{cmd:deltay} are kept.  The observed base-period outcome draw and other
-internal intermediates used to generate the paper's DGP are dropped before
-return.
-The shipped Stata DGP is therefore not a drop-in input to the {cmd:hddid-r}
-crossfit API, which is written for {cmd:y0}/{cmd:y1} level outcomes rather
-than the already-differenced {cmd:deltay} surface.
-{p_end}
-
-{phang}
-Cross-language validation note: this shipped DGP2 generator follows the paper's
-Section 5 construction and the package's paper oracle tests.  Do not treat the
-historical R wrapper name {cmd:Examplehighdimdiffindiff.R} as the DGP2 oracle:
-that wrapper file still ships under {cmd:hddid-r/R}, but the legacy code path
-documented by that name is not a runnable oracle against the shipped R
-sources.  That old wrapper called {cmd:highdimdiffindiff_crossfit()} while the
-shipped cross-fit entry point here is {cmd:highdimdiffindiff_crossfit3()}.  Even
-patching that wrapper onto {cmd:highdimdiffindiff_crossfit3()} still does not
-rescue the shipped R tree as runnable oracle code.  A rename-only patch already
-fails at the public R API layer: {cmd:Examplehighdimdiffindiff.R} passes
-{cmd:method=...} while {cmd:highdimdiffindiff_crossfit3(y0, y1, treat, x, z, q, k, z0, alp)}
-requires z0 and alp and does not accept {cmd:method}, so that patched wrapper
-first throws the concrete R error {cmd:unused argument (method = method)}.  Even
-after that signature mismatch, {cmd:highdimdiffindiff_crossfit3()} source()s
-missing {cmd:highdimdiffindiff_crossfit_inside3.r}, and its {cmd:CIuniform} line
-references undefined debias instead of {cmd:gdebias}.  That file
-re-draws z after building the baseline outcome, so the observed {cmd:z}
-in the wrapper no longer matches the same paper DGP2 covariate used in both
-the baseline term and {cmd:exp(z)}.  The wrapper also defaults to
-{cmd:method="Pol"} even though the paper's Section 5 simulations use an 8th
-degree trigonometric ({cmd:Tri}) basis.  More fundamentally, the legacy
-cross-fit code hardcodes the polynomial sieve regardless of the method
-argument, so wrapper {cmd:method="Tri"} does not actually switch that path
-onto a trigonometric basis.  The wrapper's own roxygen also documents
-{cmd:q} as {cmd:q/2}, but the shipped cross-fit code passes {cmd:q} directly
-into {cmd:sieve.Pol(..., q)} on that hardcoded polynomial path, so even the
-wrapper's nominal basis-order description drifts from its executable code. In
-plain terms, the legacy wrapper documents q as q/2 but the shipped cross-fit
-code passes q directly into sieve.Pol(..., q).
-Under this package's {cmd:q()} indexing,
-{cmd:q(8)} yields a 4th degree trigonometric basis, so matching the paper's
-8th degree Tri basis would require {cmd:q(16)} rather than {cmd:q(8)}.
-It also exposes a {cmd:rho.X} argument but still hardcodes the
-correlated-{cmd:X} covariance as {cmd:0.5^|j-k|}, so the wrapper ignores
-nondefault DGP2 correlation choices.  It also hardcodes the theta_0/omega0
-setup loops as {cmd:1:10} rather than truncating them at {cmd:p()}, so small-
-{cmd:p()} calls such as {cmd:p()<10} can extend those vectors beyond the
-simulated {cmd:X} width and eventually fail with {cmd:non-conformable
-arguments} instead of reproducing the paper's truncated DGP2.
-For the maintained R estimator reference, inspect
-those files as a read-only source reference, not a public wrapper/script entrypoint to source() directly:
-{cmd:hddid-r/R/highdimdiffindiff_crossfit.R} together with
-{cmd:hddid-r/R/highdimdiffindiff_crossfit_inside.R}: those files carry the
-surviving shipped estimator logic, specifically the
-{cmd:highdimdiffindiff_crossfit3()} entrypoint and the
-{cmd:highdimdiffindiff_crossfit_inside3()} helper, even though the public Stata
-DGP generators here publish {cmd:deltay} rather than the {cmd:y0}/{cmd:y1}
-level outcomes that the R cross-fit code expects.
-{p_end}
-
-{phang}
-To reproduce this shipped DGP2/Tri walkthrough on the generated sample, pass {cmd:deltay} to {cmd:hddid},
-rebuild the generated public {cmd:x*} varlist with {cmd:unab x_vars : x*}, pass {cmd:x(`x_vars')} with {cmd:z(z)} and {cmd:treat(treat)},
-and keep the DGP2 generator on its package-default public AR(1) path {cmd:rho(0.5)} rather than a paper-fixed rho value together with the shipped estimator settings {cmd:method("Tri")}, {cmd:q(16)}, {cmd:z0(-1 -0.5 0 0.5 1)}, {cmd:K(3)}, {cmd:alpha(0.1)}, {cmd:nboot(1000)}, and {cmd:seed(42)}.
-Those settings are the positive public counterpart to the legacy-wrapper caveat above: they keep the
-shipped DGP2 data on the same trigonometric-basis / 3-fold cross-fit contract exercised by the package's
-shipped DGP2/Tri walkthrough on the same shipped public evaluation grid and the same fold/bootstrap/CLIME RNG path used by the example/help truth checks.  The shipped five-point {cmd:z0(-1 -0.5 0 0.5 1)} list is this package audit grid rather than a paper-fixed evaluation set.
-Under {cmd:method(Tri)}, keep that explicit {cmd:z0()} grid inside the current retained {cmd:z} support.
-if any requested {cmd:z0()} point leaves that retained support, {cmd:hddid} fails closed instead of extrapolating the support-normalized Tri basis.
-That retained-support guard is a package-specific Stata Tri rule: this walkthrough uses a caller-supplied/package audit grid rather than a paper-fixed evaluation set, and the maintained R cross-fit sources here do not expose an executable {cmd:method(Tri)} fail-close interface.
-The maintained R cross-fit sources remain a read-only polynomial reference here: they do not accept method(Tri) and still hardcode sieve.Pol(..., q), so they are a source reference for the surviving score path rather than executable Tri-basis parity.
+The generator is self-contained and callable via absolute-path source-run.
+Only {cmd:x1}-{cmd:xp}, {cmd:z}, {cmd:treat}, and {cmd:deltay} are kept;
+internal intermediates are dropped.
 {p_end}
 
 {phang}

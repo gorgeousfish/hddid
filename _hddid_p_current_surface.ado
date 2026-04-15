@@ -1,6 +1,3 @@
-*! version 1.0.0
-*! _hddid_p_current_surface
-
 capture program drop _hddid_p_current_surface
 capture program drop _hddid_current_beta_coords
 capture program drop _hddid_p_current_preflight

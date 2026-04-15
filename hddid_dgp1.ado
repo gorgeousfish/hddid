@@ -1,7 +1,3 @@
-*! version 1.0.0  2026-02-24
-*! DGP1: Homoscedastic + Independent Covariates
-*! Based on Ning, Peng, and Tao (2024) Section 5
-
 capture program drop hddid_dgp1
 program define hddid_dgp1
     version 16

@@ -1,6 +1,3 @@
-*! version 1.0.0
-*! hddid_p
-
 capture program drop _hddid_p_postest_parse_estopt
 capture program drop _hddid_p_postest_show_invalid
 capture program drop _hddid_p_postest_parse_methodopt

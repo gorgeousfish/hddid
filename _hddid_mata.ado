@@ -1,6 +1,3 @@
-*! version 1.0.0
-*! _hddid_mata: Mata numerics for hddid
-
 version 16
 
 // Defensive reload: drop prior symbols so the file can be re-run in-session.
