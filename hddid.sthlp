@@ -87,67 +87,67 @@ pointwise intervals and the published {cmd:e(CIuniform)} object already stored i
 change confidence levels or the estimation sample, re-estimate with
 {cmd:alpha()} on that subsample.
 Replay still validates the published saved-results contract before display, so
-  metadata that define the estimation path, such as {cmd:e(propensity_nfolds)}
-  and {cmd:e(outcome_nfolds)} when the first stage was estimated internally,
-  plus the always-posted {cmd:e(secondstage_nfolds)} and
-  {cmd:e(mmatrix_nfolds)} for the second-stage/debiasing path, must still be
-  present for replay.  Current results still publish {cmd:e(depvar)}={cmd:beta} so generic
-  Stata postestimation labels the parametric block correctly, while replay and
-  the direct unsupported postestimation stubs can recover the original
-  outcome-role label from {cmd:e(depvar_role)} when it is stored or from the
-  successful-call provenance in {cmd:e(cmdline)} when that current-only helper
-  label is absent; only legacy result sets fall back to {cmd:e(depvar)}, plus
-  {cmd:e(treat)}, {cmd:e(xvars)}, and {cmd:e(zvar)}, and the canonical eclass
-  {cmd:e(depvar)}.  Current {cmd:hddid} estimation typically publishes the
-  canonical {cmd:e(properties)} {cmd:b}/{cmd:V} capability label (usually
-  {cmd:b V}), but current and legacy replay plus the direct unsupported
-  postestimation stubs can still display the stored beta / omitted-intercept z-varying surface when
-  {cmd:e(properties)} is absent or malformed because the numeric
-  coefficient/covariance surface already lives in {cmd:e(b)} and {cmd:e(V)};
-  what is lost is only the canonical Stata eclass capability label.  Replay prints
-  the stored {cmd:e(depvar_role)} when available and otherwise falls back to
-  the outcome-role label parsed from current {cmd:e(cmdline)} or, for legacy
-  result sets, {cmd:e(depvar)}, together with
-  {cmd:e(treat)}, {cmd:e(xvars)}, and {cmd:e(zvar)}, in the summary so
-  the published beta and omitted-intercept z-varying objects remain anchored to the same role
-  mapping after {cmd:estimates store}/{cmd:estimates use}.  Replay uses the published
-  estimation title {cmd:e(title)} when available and otherwise falls back to
-  the canonical {cmd:hddid} title, because the title is display metadata rather
-  than part of the paper/R estimator object.  Direct unsupported
-  postestimation does not require {cmd:e(title)} before advertising the stored
-  surface.  Current results usually keep {cmd:e(N_pretrim)} so replay can validate the full current accounting identity {cmd:e(N_trimmed) = e(N_pretrim) - e(N)} when that scalar is present.  Replay and the direct unsupported postestimation stubs can still display the stored HDDID surface when {cmd:e(N_pretrim)} is absent because the paper/R estimator objects already live in the posted beta, covariance, and interval surfaces; what is lost is only that extra pretrim-accounting check and summary line.
-  Current
-  results usually keep {cmd:e(k)} as the duplicate outer-fold count behind the
-  published retained fold-accounting rowvector {cmd:e(N_per_fold)}.  Replay
-  and the direct unsupported postestimation stubs can still recover that
-  current fold dimension from the width of a valid stored {cmd:e(N_per_fold)}
-  rowvector when {cmd:e(k)} is absent; what is lost is only the duplicate
-  scalar copy of the same fold count.  Current nonzero-SE results can still replay/direct unsupported postestimation when {cmd:e(cmdline)} omits {cmd:alpha()}; what is lost is only the redundant textual echo of that shared significance-level provenance.  Current nonzero-SE results can still replay/direct unsupported postestimation when {cmd:e(nboot)} is absent; what is lost is only the explicit bootstrap replication-count provenance behind {cmd:e(tc)} and {cmd:e(CIuniform)}.
-  On the degenerate zero-SE shortcut where {cmd:e(stdg)} is identically zero and {cmd:e(tc)} = {cmd:(0, 0)}, current replay/direct unsupported postestimation still require {cmd:e(nboot)} as configuration metadata.
-  Legacy replay can still display the stored beta /
-  omitted-intercept z-varying surface when {cmd:e(nboot)} is absent; what is
-  lost is only the explicit bootstrap replication-count provenance behind
-  {cmd:e(tc)} and {cmd:e(CIuniform)}.  Use {cmd:e(nboot)} for that bootstrap
-  replication-count provenance behind the published interval objects.  The published retained-sample indicator {cmd:e(sample)} still
-  identifies the realized post-trim estimation sample behind the posted beta
-  and omitted-intercept z-varying objects.  Current posting still fails closed unless {cmd:e(sample)} marks exactly the same retained post-trim count published in {cmd:e(N)}. That equality is a posting-time contract. After {cmd:estimates use}, any live {cmd:count if e(sample)} mismatch is only an informational note about today's data, not a replay veto.  When the current data still contain the published
-  role variables, replay may report {cmd:count if e(sample)} as a live
-  count-level sanity note beside stored {cmd:e(N)}; that live count is
-  informational only and does not veto replay when today's data no longer
-  reproduce the original retained sample behind the stored result surface.
-  After {cmd:estimates use}, replay can still display the stored
-  HDDID surface from {cmd:e()} even if the current data no longer support a
-  live {cmd:e(sample)} count.  That fallback also covers the stale-zero case
-  where unrelated current data happen to reuse the same role-variable names.
-  Replay can still display the stored HDDID surface when {cmd:e(sample)} is absent because the paper/R estimator objects already live in the posted {cmd:e(b)}, {cmd:e(V)}, {cmd:e(xdebias)}, {cmd:e(gdebias)}, {cmd:e(CIpoint)}, and {cmd:e(CIuniform)} surfaces; what is lost is only the optional live retained-sample note.  Direct unsupported {cmd:hddid_p}/{cmd:hddid_estat} calls still recognize the same current surface and continue to their unsupported guidance that points users to inspect those stored {cmd:e()} objects, rather than replaying the surface themselves.
+metadata that define the estimation path, such as {cmd:e(propensity_nfolds)}
+and {cmd:e(outcome_nfolds)} when the first stage was estimated internally,
+plus the always-posted {cmd:e(secondstage_nfolds)} and
+{cmd:e(mmatrix_nfolds)} for the second-stage/debiasing path, must still be
+present for replay.  Current results still publish {cmd:e(depvar)}={cmd:beta} so generic
+Stata postestimation labels the parametric block correctly, while replay and
+the direct unsupported postestimation stubs can recover the original
+outcome-role label from {cmd:e(depvar_role)} when it is stored or from the
+successful-call provenance in {cmd:e(cmdline)} when that current-only helper
+label is absent; only legacy result sets fall back to {cmd:e(depvar)}, plus
+{cmd:e(treat)}, {cmd:e(xvars)}, and {cmd:e(zvar)}, and the canonical eclass
+{cmd:e(depvar)}.  Current {cmd:hddid} estimation typically publishes the
+canonical {cmd:e(properties)} {cmd:b}/{cmd:V} capability label (usually
+{cmd:b V}), but current and legacy replay plus the direct unsupported
+postestimation stubs can still display the stored beta / omitted-intercept z-varying surface when
+{cmd:e(properties)} is absent or malformed because the numeric
+coefficient/covariance surface already lives in {cmd:e(b)} and {cmd:e(V)};
+what is lost is only the canonical Stata eclass capability label.  Replay prints
+the stored {cmd:e(depvar_role)} when available and otherwise falls back to
+the outcome-role label parsed from current {cmd:e(cmdline)} or, for legacy
+result sets, {cmd:e(depvar)}, together with
+{cmd:e(treat)}, {cmd:e(xvars)}, and {cmd:e(zvar)}, in the summary so
+the published beta and omitted-intercept z-varying objects remain anchored to the same role
+mapping after {cmd:estimates store}/{cmd:estimates use}.  Replay uses the published
+estimation title {cmd:e(title)} when available and otherwise falls back to
+the canonical {cmd:hddid} title, because the title is display metadata rather
+than part of the paper/R estimator object.  Direct unsupported
+postestimation does not require {cmd:e(title)} before advertising the stored
+surface.  Current results usually keep {cmd:e(N_pretrim)} so replay can validate the full current accounting identity {cmd:e(N_trimmed) = e(N_pretrim) - e(N)} when that scalar is present.  Replay and the direct unsupported postestimation stubs can still display the stored HDDID surface when {cmd:e(N_pretrim)} is absent because the paper/R estimator objects already live in the posted beta, covariance, and interval surfaces; what is lost is only that extra pretrim-accounting check and summary line.
+Current
+results usually keep {cmd:e(k)} as the duplicate outer-fold count behind the
+published retained fold-accounting rowvector {cmd:e(N_per_fold)}.  Replay
+and the direct unsupported postestimation stubs can still recover that
+current fold dimension from the width of a valid stored {cmd:e(N_per_fold)}
+rowvector when {cmd:e(k)} is absent; what is lost is only the duplicate
+scalar copy of the same fold count.  Current nonzero-SE results can still replay/direct unsupported postestimation when {cmd:e(cmdline)} omits {cmd:alpha()}; what is lost is only the redundant textual echo of that shared significance-level provenance.  Current nonzero-SE results can still replay/direct unsupported postestimation when {cmd:e(nboot)} is absent; what is lost is only the explicit bootstrap replication-count provenance behind {cmd:e(tc)} and {cmd:e(CIuniform)}.
+On the degenerate zero-SE shortcut where {cmd:e(stdg)} is identically zero and {cmd:e(tc)} = {cmd:(0, 0)}, current replay/direct unsupported postestimation still require {cmd:e(nboot)} as configuration metadata.
+Legacy replay can still display the stored beta /
+omitted-intercept z-varying surface when {cmd:e(nboot)} is absent; what is
+lost is only the explicit bootstrap replication-count provenance behind
+{cmd:e(tc)} and {cmd:e(CIuniform)}.  Use {cmd:e(nboot)} for that bootstrap
+replication-count provenance behind the published interval objects.  The published retained-sample indicator {cmd:e(sample)} still
+identifies the realized post-trim estimation sample behind the posted beta
+and omitted-intercept z-varying objects.  Current posting still fails closed unless {cmd:e(sample)} marks exactly the same retained post-trim count published in {cmd:e(N)}. That equality is a posting-time contract. After {cmd:estimates use}, any live {cmd:count if e(sample)} mismatch is only an informational note about today's data, not a replay veto.  When the current data still contain the published
+role variables, replay may report {cmd:count if e(sample)} as a live
+count-level sanity note beside stored {cmd:e(N)}; that live count is
+informational only and does not veto replay when today's data no longer
+reproduce the original retained sample behind the stored result surface.
+After {cmd:estimates use}, replay can still display the stored
+HDDID surface from {cmd:e()} even if the current data no longer support a
+live {cmd:e(sample)} count.  That fallback also covers the stale-zero case
+where unrelated current data happen to reuse the same role-variable names.
+Replay can still display the stored HDDID surface when {cmd:e(sample)} is absent because the paper/R estimator objects already live in the posted {cmd:e(b)}, {cmd:e(V)}, {cmd:e(xdebias)}, {cmd:e(gdebias)}, {cmd:e(CIpoint)}, and {cmd:e(CIuniform)} surfaces; what is lost is only the optional live retained-sample note.  Direct unsupported {cmd:hddid_p}/{cmd:hddid_estat} calls still recognize the same current surface and continue to their unsupported guidance that points users to inspect those stored {cmd:e()} objects, rather than replaying the surface themselves.
 {* Retired exact-token audit traceability only: replay and direct unsupported postestimation can still display the stored HDDID surface when {cmd:e(sample)} is absent because the paper/R estimator objects already live in the posted {cmd:e(b)}, {cmd:e(V)}, {cmd:e(xdebias)}, {cmd:e(gdebias)}, {cmd:e(CIpoint)}, and {cmd:e(CIuniform)} surfaces; what is lost is only the optional live retained-sample note. *}
 That same replay contract also keeps the machine-readable variance/postestimation metadata,
 including wrapper labels such as {cmd:e(predict)}, {cmd:e(estat_cmd)}, or {cmd:e(marginsnotok)}.
 {cmd:e(vce)} is different from the wrapper dispatch labels {cmd:e(predict)}, {cmd:e(estat_cmd)}, and {cmd:e(marginsnotok)}: bare {cmd:hddid} replay plus direct {cmd:hddid_p}/{cmd:hddid_estat} calls can fall back to the canonical dispatch labels when those wrapper-only tags are absent or malformed, while generic {cmd:predict}, generic {cmd:estat}, and {cmd:margins} still require live dispatch labels because Stata itself reads those fields before the HDDID stubs can run.
- That fallback scope is limited to bare {cmd:hddid} replay plus direct
- {cmd:hddid_p}/{cmd:hddid_estat} calls: generic {cmd:predict}, generic
- {cmd:estat}, and {cmd:margins} still depend on the live dispatch labels that
- Stata itself reads from {cmd:e()}.
+That fallback scope is limited to bare {cmd:hddid} replay plus direct
+{cmd:hddid_p}/{cmd:hddid_estat} calls: generic {cmd:predict}, generic
+{cmd:estat}, and {cmd:margins} still depend on the live dispatch labels that
+Stata itself reads from {cmd:e()}.
 Replay and the direct unsupported postestimation stubs therefore fall back to the
 canonical {cmd:robust} variance tag when {cmd:e(vce)} is absent or malformed,
 because the posted covariance already lives in {cmd:e(V)} and the paper/R estimator
@@ -165,55 +165,55 @@ is absent or malformed, because the posted covariance and paper/R estimator
 objects already live in {cmd:e(V)}, {cmd:e(xdebias)}, {cmd:e(gdebias)},
 {cmd:e(CIpoint)}, and {cmd:e(CIuniform)} surfaces; what is lost is only that
 display label.
- Legacy replay can likewise still display the stored beta / omitted-intercept z-varying surface when
- {cmd:e(vce)}, {cmd:e(vcetype)}, {cmd:e(predict)}, {cmd:e(estat_cmd)}, or
- {cmd:e(marginsnotok)} is absent or malformed because the paper/R estimator
- objects already live in the posted aggregate {cmd:e(b)}, {cmd:e(V)},
- {cmd:e(xdebias)}, {cmd:e(gdebias)}, {cmd:e(CIpoint)}, and {cmd:e(CIuniform)}
- surfaces; what is lost is only the Stata variance/dispatch label block.
- Replay/direct unsupported postestimation still validate that it equals {cmd:rank(e(V))} before advertising the published beta covariance surface when {cmd:e(rank)} is stored.  When {cmd:e(rank)} is absent, replay and direct unsupported postestimation can still recover the covariance rank from the posted {cmd:e(V)} matrix itself, so missing stored rank metadata does not by itself invalidate an otherwise coherent saved-results surface.
- When stored, replay also validates {cmd:e(tc)} as the ordered Gaussian-bootstrap
- critical-value pair behind the published {cmd:e(CIuniform)} interval object.
- But the public nonparametric interval surface is still {cmd:e(CIuniform)}.
- Legacy results can still keep the published {cmd:e(CIuniform)} object when
- {cmd:e(tc)} itself is absent, but current replay/direct unsupported
- postestimation fail closed because current saved-results surfaces publish
- {cmd:e(tc)} as machine-readable bootstrap provenance behind that interval
- object.  When available, replay
- cross-checks the stored provenance record {cmd:e(cmdline)} against the
- machine-readable first-stage metadata.  Replay classifies the first-stage
- path from {cmd:e(firststage_mode)} when that metadata is stored, but current
- and legacy result sets can also recover it from the option list inside
- {cmd:e(cmdline)} when that successful-call provenance record is still
- available; when both are absent, replay and direct unsupported postestimation
- now fail closed instead of inventing a nuisance-path label.  Current
- producer-side posting also fails closed when cmdline() nofirst classification
- contradicts the machine-readable first-stage metadata it would post, because
- one realized run has one nuisance-path classification.
- Current
- internally estimated results still replay from {cmd:e(firststage_mode)}
- plus the stored role metadata when that raw command line is unavailable;
- what is lost is only the original successful-call provenance text.  Current
- {cmd:nofirst} results likewise remain replayable from {cmd:e(firststage_mode)}
- plus the stored role metadata when that raw command line is unavailable.
- Current results can still support bare replay and direct unsupported
- postestimation guidance from the successful-call provenance in
- {cmd:e(cmdline)} when {cmd:e(firststage_mode)} is unavailable; what is lost is
- only that machine-readable helper label.
- Legacy result sets
- without {cmd:e(firststage_mode)} still need {cmd:e(cmdline)} as the
- successful-call provenance record that classifies the first-stage path.
- When the current data still contain the referenced variables, replay resolves
- legal Stata varname abbreviations inside the stored depvar/{cmd:treat()}/
- {cmd:x()}/{cmd:z()} provenance before checking those names against the
- published role metadata.  If those variables are no longer in memory, replay
- instead compares the stored cmdline tokens against the published full role
- metadata and still accepts legal unique prefix abbreviations plus legal {cmd:x()}
- wildcards as provenance-only spellings; Stata {cmd:x()} ranges are accepted
- only when the current data still let replay expand them exactly, because a
- bare range token is otherwise ambiguous about the original dataset order.
- Pure {cmd:x()} permutations remain acceptable because {cmd:hddid} canonicalizes the published
- {cmd:e(xvars)} order before posting results.
+Legacy replay can likewise still display the stored beta / omitted-intercept z-varying surface when
+{cmd:e(vce)}, {cmd:e(vcetype)}, {cmd:e(predict)}, {cmd:e(estat_cmd)}, or
+{cmd:e(marginsnotok)} is absent or malformed because the paper/R estimator
+objects already live in the posted aggregate {cmd:e(b)}, {cmd:e(V)},
+{cmd:e(xdebias)}, {cmd:e(gdebias)}, {cmd:e(CIpoint)}, and {cmd:e(CIuniform)}
+surfaces; what is lost is only the Stata variance/dispatch label block.
+Replay/direct unsupported postestimation still validate that it equals {cmd:rank(e(V))} before advertising the published beta covariance surface when {cmd:e(rank)} is stored.  When {cmd:e(rank)} is absent, replay and direct unsupported postestimation can still recover the covariance rank from the posted {cmd:e(V)} matrix itself, so missing stored rank metadata does not by itself invalidate an otherwise coherent saved-results surface.
+When stored, replay also validates {cmd:e(tc)} as the ordered Gaussian-bootstrap
+critical-value pair behind the published {cmd:e(CIuniform)} interval object.
+But the public nonparametric interval surface is still {cmd:e(CIuniform)}.
+Legacy results can still keep the published {cmd:e(CIuniform)} object when
+{cmd:e(tc)} itself is absent, but current replay/direct unsupported
+postestimation fail closed because current saved-results surfaces publish
+{cmd:e(tc)} as machine-readable bootstrap provenance behind that interval
+object.  When available, replay
+cross-checks the stored provenance record {cmd:e(cmdline)} against the
+machine-readable first-stage metadata.  Replay classifies the first-stage
+path from {cmd:e(firststage_mode)} when that metadata is stored, but current
+and legacy result sets can also recover it from the option list inside
+{cmd:e(cmdline)} when that successful-call provenance record is still
+available; when both are absent, replay and direct unsupported postestimation
+now fail closed instead of inventing a nuisance-path label.  Current
+producer-side posting also fails closed when cmdline() nofirst classification
+contradicts the machine-readable first-stage metadata it would post, because
+one realized run has one nuisance-path classification.
+Current
+internally estimated results still replay from {cmd:e(firststage_mode)}
+plus the stored role metadata when that raw command line is unavailable;
+what is lost is only the original successful-call provenance text.  Current
+{cmd:nofirst} results likewise remain replayable from {cmd:e(firststage_mode)}
+plus the stored role metadata when that raw command line is unavailable.
+Current results can still support bare replay and direct unsupported
+postestimation guidance from the successful-call provenance in
+{cmd:e(cmdline)} when {cmd:e(firststage_mode)} is unavailable; what is lost is
+only that machine-readable helper label.
+Legacy result sets
+without {cmd:e(firststage_mode)} still need {cmd:e(cmdline)} as the
+successful-call provenance record that classifies the first-stage path.
+When the current data still contain the referenced variables, replay resolves
+legal Stata varname abbreviations inside the stored depvar/{cmd:treat()}/
+{cmd:x()}/{cmd:z()} provenance before checking those names against the
+published role metadata.  If those variables are no longer in memory, replay
+instead compares the stored cmdline tokens against the published full role
+metadata and still accepts legal unique prefix abbreviations plus legal {cmd:x()}
+wildcards as provenance-only spellings; Stata {cmd:x()} ranges are accepted
+only when the current data still let replay expand them exactly, because a
+bare range token is otherwise ambiguous about the original dataset order.
+Pure {cmd:x()} permutations remain acceptable because {cmd:hddid} canonicalizes the published
+{cmd:e(xvars)} order before posting results.
 Replay also prints that stored first-stage path in the summary so users can
 see whether nuisance inputs were estimated internally or supplied via
 {cmd:nofirst}.  Replay also prints the fixed estimator-path label

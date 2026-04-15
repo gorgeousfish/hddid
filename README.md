@@ -10,7 +10,7 @@
 
 ## Overview
 
-`hddid` implements the **doubly robust semiparametric difference-in-differences estimator** proposed by Ning, Peng, and Tao (2020) for settings with high-dimensional covariates. The estimator targets the conditional average treatment effect on the treated (CATT) under a partially linear model:
+`hddid` implements the **doubly robust semiparametric difference-in-differences estimator** proposed by Ning, Peng, and Tao (2024) for settings with high-dimensional covariates. The estimator targets the conditional average treatment effect on the treated (CATT) under a partially linear model:
 
 $$E[Y^1(1) - Y^0(1) \mid X, Z, D=1] = X'\beta + f(Z)$$
 
@@ -334,7 +334,7 @@ where $X \in \mathbb{R}^p$ is high-dimensional (possibly $p > n$) and $f_0: \mat
 
 ## References
 
-Ning, Y., Peng, S., & Tao, J. (2020). Doubly robust semiparametric difference-in-differences estimators with high-dimensional data. *arXiv preprint arXiv:2009.03151*.
+Ning, Y., Peng, S., & Tao, J. (2024). Doubly robust semiparametric difference-in-differences estimators with high-dimensional data. *Review of Economics and Statistics*, 106(4), 1063–1080.
 
 ## Authors
 
@@ -363,7 +363,7 @@ If you use this package in your research, please cite both the methodology paper
 
 > Cai, X., & Xu, W. (2025). *hddid: Stata module for doubly robust semiparametric difference-in-differences estimation with high-dimensional data* (Version 1.0.0) [Computer software]. GitHub. https://github.com/gorgeousfish/hddid
 >
-> Ning, Y., Peng, S., & Tao, J. (2020). Doubly robust semiparametric difference-in-differences estimators with high-dimensional data. *arXiv preprint arXiv:2009.03151*.
+> Ning, Y., Peng, S., & Tao, J. (2024). Doubly robust semiparametric difference-in-differences estimators with high-dimensional data. *Review of Economics and Statistics*, 106(4), 1063–1080.
 
 **BibTeX:**
 
@@ -376,15 +376,18 @@ If you use this package in your research, please cite both the methodology paper
   url={https://github.com/gorgeousfish/hddid}
 }
 
-@article{ning2020doubly,
+@article{ning2024doubly,
   title={Doubly robust semiparametric difference-in-differences estimators with high-dimensional data},
   author={Ning, Yang and Peng, Sida and Tao, Jing},
-  journal={arXiv preprint arXiv:2009.03151},
-  year={2020}
+  journal={Review of Economics and Statistics},
+  volume={106},
+  number={4},
+  pages={1063--1080},
+  year={2024}
 }
 ```
 
 ## See Also
 
 - Original R package by Ning, Peng, and Tao: https://github.com/psdsam/HDdiffindiff
-- Paper: Ning, Y., Peng, S., & Tao, J. (2020). https://arxiv.org/abs/2009.03151
+- Paper: Ning, Y., Peng, S., & Tao, J. (2024). *Review of Economics and Statistics*, 106(4), 1063–1080. https://arxiv.org/abs/2009.03151
