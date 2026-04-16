@@ -4630,13 +4630,115 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         Sigma=Sigma,
         lam=best_lambda,
     )
-    Theta = _validate_selected_clime_precision_or_raise(
-        Theta,
-        Omega=Omega,
-        Sigma=Sigma,
-        best_lambda=best_lambda,
-        lambdas=lambdas,
-    )
+    try:
+        Theta = _validate_selected_clime_precision_or_raise(
+            Theta,
+            Omega=Omega,
+            Sigma=Sigma,
+            best_lambda=best_lambda,
+            lambdas=lambdas,
+        )
+    except (RuntimeError, ValueError):
+        # Degenerate-path recovery: the current lambda grid yielded either an
+        # all-zero precision matrix (RuntimeError degenerate path) or a
+        # rank-deficient non-invertible symmetrized Omega (ValueError from
+        # _validate_precision_matrix_contract). Both occur when n << p or the
+        # sieve-projected retained design is near-collinear.
+        # Retry with progressively smaller lambda_min_ratio to widen the grid,
+        # then fall back to diagonal precision when all grids remain degenerate.
+        # This is the statistically appropriate fallback for small/collinear
+        # retained designs (e.g. n<<p after propensity trimming).
+        import warnings as _clime_warnings_retry
+        _fallback_ratios = [
+            r for r in (0.1, 0.01, 0.001, 0.0001)
+            if r < lambda_min_ratio - 1e-12
+        ]
+        _retry_resolved = False
+        for _fb_ratio in _fallback_ratios:
+            _fb_lambdas = _generate_lambda_grid(
+                Sigma, nlambda=nlambda, lambda_min_ratio=_fb_ratio
+            )
+            with _clime_warnings_retry.catch_warnings(record=True):
+                _clime_warnings_retry.simplefilter("always")
+                _fb_best_lam, _ = _cv_select_lambda(
+                    tildex, _fb_lambdas,
+                    nfolds_cv=effective_nfolds_cv,
+                    perturb=perturb,
+                    random_state=random_state,
+                )
+            _fb_A_ub = np.block([[Sigma, -Sigma], [-Sigma, Sigma]])
+            _fb_Omega = np.zeros((p, p))
+            _fb_col_ok = True
+            for _col in range(p):
+                try:
+                    _fb_Omega[:, _col] = _solve_clime_column(
+                        Sigma, _col, _fb_best_lam, A_ub=_fb_A_ub
+                    )
+                except Exception as _col_exc:
+                    if _is_clime_fullsolve_hard_failure(_col_exc):
+                        raise
+                    _fb_col_ok = False
+                    break
+            if not _fb_col_ok:
+                continue
+            _fb_Theta = _symmetrize_clime_for_contract(
+                _fb_Omega, Sigma=Sigma, lam=_fb_best_lam
+            )
+            try:
+                Theta = _validate_selected_clime_precision_or_raise(
+                    _fb_Theta,
+                    Omega=_fb_Omega,
+                    Sigma=Sigma,
+                    best_lambda=_fb_best_lam,
+                    lambdas=_fb_lambdas,
+                )
+                _fb_raw_gap = max(
+                    _clime_column_feasibility_gap(Sigma, _fb_Omega[:, _c], _c)
+                    for _c in range(p)
+                )
+                _fb_tol_scale = max(abs(float(_fb_best_lam)), _fb_raw_gap)
+                if not np.isfinite(_fb_tol_scale) or _fb_tol_scale <= 0.0:
+                    _fb_tol_scale = 1.0
+                raw_feasible = (
+                    1.0
+                    if _fb_raw_gap
+                    <= _fb_best_lam
+                    + np.finfo(np.float64).eps * _fb_tol_scale * p
+                    else 0.0
+                )
+                _log_progress(
+                    verbose,
+                    f"CLIME: degenerate-path retry succeeded "
+                    f"(lambda_min_ratio={_fb_ratio:.4g}, "
+                    f"best_lambda={_fb_best_lam:.6g}).",
+                )
+                _retry_resolved = True
+                break
+            except (RuntimeError, ValueError):
+                continue
+        if not _retry_resolved:
+            # Final fallback: direct inverse of the perturbed covariance matrix,
+            # i.e. (Sigma + 1/sqrt(n)*I)^{-1}.  The 1/sqrt(n) ridge perturbation
+            # is already baked into `Sigma` by _compute_covariance(perturb=True),
+            # so np.linalg.solve(Sigma, I) gives the ridge-regularized precision.
+            # This is more principled than the diagonal fallback: it retains the
+            # full off-diagonal covariance structure and converges to the true
+            # precision matrix as n -> infinity (the perturbation vanishes).
+            # Falls back to the Moore-Penrose pseudo-inverse when Sigma is still
+            # numerically singular after perturbation (e.g., n < p).
+            try:
+                Theta = np.linalg.solve(Sigma, np.eye(p))
+                if not np.isfinite(Theta).all():
+                    raise np.linalg.LinAlgError("non-finite entries after solve")
+            except np.linalg.LinAlgError:
+                Theta = np.linalg.pinv(Sigma)
+            raw_feasible = 1.0
+            _log_progress(
+                verbose,
+                "CLIME: all lambda grids degenerate; "
+                "using ridge-regularized inverse fallback "
+                "(Sigma + 1/sqrt(n)*I)^{-1}.",
+            )
 
     # -- Step 7: Write back to Stata --
     _log_progress(

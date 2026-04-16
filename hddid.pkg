@@ -28,3 +28,5 @@ f hddid_clime.py
 f hddid_safe_probe.py
 f hddid_example.do
 f stata.toc
+e nsw_dw.dta
+e minwage_state.dta

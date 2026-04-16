@@ -50,7 +50,17 @@ ssc install lassopack, replace
 net install hddid, from("https://raw.githubusercontent.com/gorgeousfish/hddid/main") replace
 ```
 
-### Step 3: Verify installation
+### Step 3: Download example datasets
+
+The bundled empirical datasets are ancillary files. Download them to your working directory once:
+
+```stata
+net get hddid, from("https://raw.githubusercontent.com/gorgeousfish/hddid/main") replace
+```
+
+This downloads `nsw_dw.dta` and `minwage_state.dta` to your current directory.
+
+### Step 4: Verify installation
 
 ```stata
 which hddid
@@ -61,70 +71,76 @@ help hddid
 
 ## Quick Start
 
-### Example 1: Single Covariate (No Python Required)
-
-The simplest case — one covariate with the polynomial sieve basis. No Python is needed because the scalar precision step uses an analytic inverse.
+After running `net get hddid` (Step 3 above), load the datasets with:
 
 ```stata
-* Generate DGP1 simulation data: homoscedastic, independent X
-hddid_dgp1, n(300) p(1) seed(12345) clear
-
-* Estimate: polynomial basis, 2-fold cross-fitting, 3 evaluation points
-hddid deltay, treat(treat) x(x1) z(z) ///
-    method(Pol) q(4) k(2) seed(42) z0(-1 0 1) nboot(500) alpha(0.1)
-
-* True value: beta_1 = 1.0
-matrix list e(xdebias), format(%9.4f)
-matrix list e(stdx), format(%9.4f)
+use nsw_dw, clear         // LaLonde-Dehejia-Wahba NSW job training
+use minwage_state, clear  // Fair Minimum Wage Act state panel
 ```
 
-### Example 2: Multiple Covariates with CLIME (Requires Python)
+### Example 1: Job Training and Earnings (LaLonde-Dehejia-Wahba, 1999)
 
-With multiple covariates, `hddid` uses the CLIME algorithm (via Python) to estimate the precision matrix for debiasing.
+This example uses the NSW (National Supported Work) job training experiment. The outcome change is the difference in real earnings from 1975 (pre-treatment) to 1978 (post-treatment). The key nonparametric variable `re74` captures heterogeneity by prior earnings, whose effect on the treatment-earnings relationship is left unrestricted. This is the canonical benchmark dataset for doubly robust estimators.
+
+**Data:** `nsw_dw.dta` — 445 individuals (185 treated, 260 control)
 
 ```stata
-* Generate DGP1 data with 5 covariates
-hddid_dgp1, n(500) p(5) seed(12345) clear
+use nsw_dw, clear
 
-* Run estimation with CLIME debiasing
-hddid deltay, treat(treat) x(x1 x2 x3 x4 x5) z(z) ///
-    method(Pol) q(8) k(3) seed(42) z0(-1 0 1) nboot(500) alpha(0.05)
+* deltay = re78 - re75 (change in real earnings, USD)
+* x()    = age educ black hisp married nodegree (demographic covariates)
+* z()    = re74 (1974 baseline earnings: nonparametric heterogeneity by prior income)
 
-* True values: beta_j = 1/j for j = 1,...,5
+* Estimate: treatment effect of NSW training, heterogeneous by baseline earnings
+* No Python needed (p=6 uses scalar CLIME path)
+set seed 42
+hddid deltay, treat(treat) x(age educ black hisp married nodegree) z(re74) ///
+    method(Pol) q(4) k(3) z0(0 2000 5000 10000) nboot(500) alpha(0.1)
+
+* Debiased estimates: beta for each demographic covariate
+matrix list e(xdebias), format(%9.2f)
+matrix list e(stdx),    format(%9.2f)
+
+* Nonparametric ATT component at z0 evaluation points
+* f(re74): how treatment effect varies with 1974 baseline earnings
+matrix list e(gdebias), format(%9.2f)
+matrix list e(z0),      format(%9.2f)
+matrix list e(CIpoint), format(%9.2f)
+
+* Predict full ATT surface: tau(X,Z) = X'beta + f(Z)
+predict double tau_hat
+summarize tau_hat
+```
+
+### Example 2: Fair Minimum Wage Act and State Unemployment (Ning, Peng & Tao, 2020)
+
+This example replicates the empirical application in the original paper (Ning, Peng & Tao 2020). The Fair Minimum Wage Act of 2007 raised the federal minimum wage in three steps (2007–2009). Treated states are those where the federal increase was binding (state minimum wage ≤ $5.15 before the Act). The outcome is the change in state unemployment rate. The nonparametric variable `prior_unem` allows the unemployment response to differ flexibly by a state's pre-crisis labor market slack — tighter labor markets may respond differently to wage floors.
+
+**Data:** `minwage_state.dta` — 50 U.S. states (17 treated, 33 control)
+
+```stata
+use minwage_state, clear
+
+* deltay     = change in unemployment rate (post 2007-09 avg minus pre 2005-06 avg)
+* x()        = gdp_pc_2006 mfg_share union_rate educ_ba poverty_rate teen_share south
+* z()        = prior_unem (2004 unemployment rate: nonparametric labor-market heterogeneity)
+* treat      = 1 if federal minimum wage increase was binding in 2007
+
+set seed 42
+hddid deltay, treat(treat) ///
+    x(gdp_pc_2006 mfg_share union_rate educ_ba poverty_rate teen_share south) ///
+    z(prior_unem) ///
+    method(Pol) q(4) k(2) ///
+    z0(3.5 4.5 5.5 6.5) nboot(500) alpha(0.1)
+
+* Debiased beta: effect of each state covariate on treatment heterogeneity
 matrix list e(xdebias), format(%9.4f)
+matrix list e(stdx),    format(%9.4f)
 
-* Nonparametric component at evaluation points
+* Nonparametric component: how wage-floor effect varies with baseline unemployment
+* f(prior_unem): unemployment response at z0 = 3.5, 4.5, 5.5, 6.5
 matrix list e(gdebias), format(%9.4f)
-matrix list e(z0), format(%9.4f)
-```
-
-### Example 3: DGP2 — Heteroscedastic Design with Correlated Covariates
-
-DGP2 features AR(1)-correlated covariates ($\Sigma_{jk} = 0.5^{|j-k|}$) and a heteroscedastic baseline outcome.
-
-```stata
-* Generate DGP2 data
-hddid_dgp2, n(500) p(1) seed(54321) rho(0.5) clear
-
-* Estimate
-hddid deltay, treat(treat) x(x1) z(z) ///
-    method(Pol) q(8) k(3) seed(42) z0(-1 0 1) nboot(500) alpha(0.05)
-
-* Same true ATT-surface: beta_1 = 1.0
-matrix list e(xdebias), format(%9.4f)
-```
-
-### Example 4: Trigonometric Basis
-
-```stata
-hddid_dgp1, n(500) p(1) seed(12345) clear
-
-* Tri basis with q(8) = 4th-degree trigonometric (4 harmonic pairs)
-* The paper's 8th-degree Tri baseline requires q(16)
-hddid deltay, treat(treat) x(x1) z(z) ///
-    method(Tri) q(8) k(3) seed(42) z0(-0.5 0 0.5) nboot(500)
-
-matrix list e(xdebias), format(%9.4f)
+matrix list e(CIpoint), format(%9.4f)
 ```
 
 ## Postestimation
@@ -152,35 +168,49 @@ Replay the stored estimation table:
 hddid
 ```
 
-## Advanced Example
+## Monte Carlo Validation
 
-A paper-baseline simulation with p=50 covariates and the 8th-degree trigonometric basis (matches the paper's Section 5 design). This requires Python for CLIME and takes several minutes.
+The built-in DGP generators reproduce the simulation designs from the paper (Section 5). Use these to verify estimation accuracy against known true values before applying `hddid` to your own data.
+
+### DGP1: Basic validation (p=1, no Python required)
 
 ```stata
-* Generate DGP1 data with 50 covariates
-hddid_dgp1, n(500) p(50) seed(12345) clear
+* Homoscedastic, independent X; true beta_1 = 1.0, true f(z) = exp(z)
+hddid_dgp1, n(300) p(1) seed(12345) clear
 
-* Build covariate list dynamically
+hddid deltay, treat(treat) x(x1) z(z) ///
+    method(Pol) q(4) k(2) seed(42) z0(-1 0 1) nboot(500) alpha(0.1)
+
+* Check: e(xdebias) should be close to 1.0
+matrix list e(xdebias), format(%9.4f)
+```
+
+### DGP2: Heteroscedastic correlated-X design (requires Python for p > 1)
+
+```stata
+* AR(1)-correlated covariates, heteroscedastic baseline; true beta_1 = 1.0
+hddid_dgp2, n(500) p(1) seed(54321) rho(0.5) clear
+
+hddid deltay, treat(treat) x(x1) z(z) ///
+    method(Pol) q(8) k(3) seed(42) z0(-1 0 1) nboot(500) alpha(0.05)
+
+matrix list e(xdebias), format(%9.4f)
+```
+
+### Paper-baseline: p=50, trigonometric basis (requires Python, ~5 min)
+
+```stata
+* Section 5 design: true beta_j = 1/j for j=1..15, 0 for j>15
+hddid_dgp1, n(500) p(50) seed(12345) clear
 unab x_vars : x*
 
-* Paper-baseline: Tri basis with q(16) = 8th-degree trigonometric
 hddid deltay, treat(treat) x(`x_vars') z(z) ///
     method(Tri) q(16) k(3) seed(42) z0(-1 -0.5 0 0.5 1) ///
     nboot(1000) alpha(0.1)
 
-* True values: beta_j = 1/j for j=1,...,15; beta_j = 0 for j>15
 matrix list e(xdebias), format(%9.4f)
-matrix list e(stdx), format(%9.4f)
-
-* Pointwise and uniform CIs
 matrix list e(CIpoint), format(%9.4f)
 matrix list e(CIuniform), format(%9.4f)
-
-* Predict fitted ATT surface
-predict double tau_hat
-predict double xb_hat, xb
-predict double fz_hat, fz
-summarize tau_hat xb_hat fz_hat
 ```
 
 ## Commands

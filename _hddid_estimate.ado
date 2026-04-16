@@ -729,7 +729,7 @@ program define _hddid_estimate, eclass sortpreserve
     local mm_min_eval_per_fold = 2
     local clime_nfolds_cv_requested = 5
     local clime_nlambda_requested = 5
-    local clime_lambda_min_ratio = 0.4
+    local clime_lambda_min_ratio = 0.01
     // cvlassologit, nfolds(3) stratified still late-crashes on some 3/3/6
     // training subsets. Fail closed below 4/4/8 so fold-level propensity CV
     // never reaches the known getMinIC()/PostResults conformability path.
