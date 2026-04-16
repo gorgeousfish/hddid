@@ -721,6 +721,20 @@ program define _hddid_estimate, eclass sortpreserve
         exit 198
     }
 
+    if "`method'" == "Pol" {
+        quietly summarize `z' if `touse', meanonly
+        local _pol_z_absmax = max(abs(r(min)), abs(r(max)))
+        if `_pol_z_absmax' > 100 {
+            di as text "{bf:hddid warning}: z() has large scale with {bf:method(Pol)}"
+            di as text "  max|z| = " %9.2f `_pol_z_absmax' " on the estimation sample"
+            di as text "  Polynomial basis functions z^k can overflow numerically for large-scale z:"
+            di as text "  z^`q' ≈ " %9.3e (`_pol_z_absmax'^`q') " which may cause unstable f(z) estimates"
+            di as text "  Recommendation: standardize z before calling hddid, e.g.:"
+            di as text "    {stata egen z_std = std(`z')}"
+            di as text "    {stata hddid ..., z(z_std) z0(...)}"
+        }
+    }
+
     local stage1_prop_nfolds = 3
     local stage1_outcome_nfolds = 5
     local stage2_nfolds = 3
