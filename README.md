@@ -426,17 +426,17 @@ If you use this package in your research, please cite both the methodology paper
 
 **APA Format:**
 
-> Cai, X., & Xu, W. (2025). *hddid: Stata module for doubly robust semiparametric difference-in-differences estimation with high-dimensional data* (Version 1.0.0) [Computer software]. GitHub. https://github.com/gorgeousfish/hddid
+> Cai, X., & Xu, W. (2026). *hddid: Stata module for doubly robust semiparametric difference-in-differences estimation with high-dimensional data* (Version 1.0.0) [Computer software]. GitHub. https://github.com/gorgeousfish/hddid
 >
 > Ning, Y., Peng, S., & Tao, J. (2024). Doubly robust semiparametric difference-in-differences estimators with high-dimensional data. *Review of Economics and Statistics*, 106(4), 1063–1080.
 
 **BibTeX:**
 
 ```bibtex
-@software{hddid2025stata,
+@software{hddid2026stata,
   title={hddid: Stata module for doubly robust semiparametric difference-in-differences estimation with high-dimensional data},
   author={Xuanyu Cai and Wenli Xu},
-  year={2025},
+  year={2026},
   version={1.0.0},
   url={https://github.com/gorgeousfish/hddid}
 }
