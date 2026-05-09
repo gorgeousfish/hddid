@@ -75,12 +75,17 @@ It then uses the same beta^1_i = 2/i, beta^0_i = 1/i for i <= 15,
 post-period shocks {cmd:eps0} and {cmd:eps1} as in the paper's DGP2.
 The generated public outcome is the realized post-minus-base change stored in
 {cmd:deltay}; it is not the post-period treatment-state contrast
-{cmd:Y^1(i,1) - Y^0(i,1)}.  Running hddid on this generated deltay sample
-means the returned parametric block targets the ATT-surface contrast
-beta_j = beta^1_j - beta^0_j = 1/j on that support, and the returned nonparametric block is the public omitted-intercept z-varying block
-aligned to the posted evaluation grid, not either raw treated- or control-outcome slope sequence by itself. Because {cmd:hddid} does not currently publish {cmd:e(a0)}, that public block is not the full paper
-level {cmd:f(z0) = exp(z0)}. Public truth checks should therefore compare centered differences on the posted evaluation grid rather than uncentered levels. The full heterogeneous ATT at a test point still contains the separate stage-2 intercept a0.
-This public DGP2 surface is therefore not a full ATT-level oracle at a test point: it exposes the beta-side truth and the centered omitted-intercept z-varying shape on the posted {cmd:z0()} grid, not the full level {cmd:x0'beta + f(z0)}.
+{cmd:Y^1(i,1) - Y^0(i,1)}.
+{p_end}
+
+{pstd}
+Running {cmd:hddid} on this {cmd:deltay} sample returns the ATT-surface
+contrast: the parametric truth is {cmd:beta_j = 1/j} for {cmd:j <= 15} (and
+0 afterward), and the nonparametric truth is {cmd:f(z) = exp(z)}.  The
+published {cmd:e(gdebias)} block is centered (excludes the stage-2
+intercept); the full level at the posted grid is
+{cmd:e(a0) + e(gdebias)} and the full heterogeneous ATT at a test point is
+{cmd:x0'e(b) + e(a0) + f(z0)}.
 {p_end}
 
 {pstd}

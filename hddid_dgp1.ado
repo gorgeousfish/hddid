@@ -36,8 +36,8 @@ program define hddid_dgp1
         exit 4
     }
 
-    // Peak footprint is p x-variables plus 12 additional variables created
-    // before the intermediate cleanup drop.
+    // Maximum variable footprint: p covariates plus 12 temporary variables
+    // generated prior to intermediate cleanup.
     local extra_vars = 12
     local maxvar_now = c(maxvar)
     local peak_vars = `p' + `extra_vars'
@@ -53,8 +53,8 @@ program define hddid_dgp1
     local restore_rng = (`"`seed_input'"' != "" & `seed' != -1)
     local caller_rngstate = c(rngstate)
 
-    // Build the replacement dataset transactionally so any runtime failure
-    // leaves the caller's data untouched.
+    // Generate the synthetic dataset within a transactional block to preserve
+    // the calling environment in case of execution failure.
     preserve
     capture noisily {
         clear
@@ -63,16 +63,16 @@ program define hddid_dgp1
             set seed `seed'
         }
 
-        // --- X covariates: independent standard normal ---
+        // Covariate matrix X: independent standard normal draws
         forvalues j = 1/`p' {
             gen double x`j' = rnormal()
         }
 
-        // --- Z covariate: independent standard normal ---
+        // Continuous covariate Z: independent standard normal draw
         gen double z = rnormal()
 
-        // --- Propensity score: P(T=1) = 1 - 1/(1+exp(X'theta0)) ---
-        // theta0_i = 1/i (i<=10), 0 (i>10)
+        // Propensity score: logit link with decaying coefficients
+        //   P(T=1|X) = invlogit(X'θ), θ_i = 1/i for i ≤ 10, 0 otherwise
         gen double xtheta = 0
         local ptheta = min(`p', 10)
         forvalues i = 1/`ptheta' {
@@ -81,12 +81,13 @@ program define hddid_dgp1
         gen double prop = invlogit(xtheta)
         gen byte treat = rbinomial(1, prop)
 
-        // --- Base period outcome and error terms ---
+        // Baseline outcome and idiosyncratic error terms
         gen double y0_base = rnormal()
         gen double eps0 = rnormal()
         gen double eps1 = rnormal()
 
-        // --- Linear parts: beta1_i=2/i, beta0_i=1/i (i<=15) ---
+        // Linear index with heterogeneous treatment and control coefficients
+        //   Treated: β1_i = 2/i; Control: β0_i = 1/i for i ≤ 15
         gen double xbeta1 = 0
         gen double xbeta0 = 0
         local pbeta = min(`p', 15)
@@ -96,12 +97,12 @@ program define hddid_dgp1
         }
         gen double fz = exp(z)
 
-        // --- Post-period outcome ---
+        // Post-treatment outcome construction with partially linear structure
         gen double y1 = y0_base + (xbeta1 + fz + eps1)*treat ///
                                  + (xbeta0 + eps0)*(1-treat)
         gen double deltay = y1 - y0_base
 
-        // --- Clean intermediate variables ---
+        // Remove temporary variables from working memory
         drop xtheta prop y0_base eps0 eps1 xbeta1 xbeta0 fz y1
     }
 

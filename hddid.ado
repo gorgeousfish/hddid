@@ -11,9 +11,7 @@ program define _hddid_wrap_drop_main
         _hddid_clime_scipy_probe ///
         _hddid_clime_feas_ok ///
         _hddid_probe_fail_classify ///
-        _hddid_cvlasso_pick_lambda ///
         _hddid_run_rng_isolated ///
-        _hddid_resolve_prop_cv ///
         _hddid_count_split_groups ///
         _hddid_choose_outer_split_sample ///
         _hddid_default_outer_fold_map ///
@@ -140,9 +138,8 @@ program define _hddid_wrap_has_surface, rclass
         if `"`_hddid_depvar_probe'"' == "" & ///
             `"`_hddid_depvar_role_probe'"' == "" & ///
             `"`_hddid_cmdline_depvar_probe'"' != "" {
-            // Current replay/postestimation can still recover the original
-            // outcome-role label from the successful-call depvar token when
-            // both duplicate depvar locals are absent.
+            // Recover the outcome variable name from the command line
+            // when both stored depvar labels are absent.
             local _hddid_depvar_role_probe `"`_hddid_cmdline_depvar_probe'"'
         }
         if `"`_hddid_treat_probe'"' == "" & ///
@@ -240,13 +237,9 @@ program define _hddid_wrap_has_surface, rclass
             `"`_hddid_treat_probe'"' != "" & `"`_hddid_xvars_probe'"' != "" & ///
             `"`_hddid_zvar_probe'"' != "" & `"`_hddid_method_probe'"' != "" & ///
             (`"`_hddid_depvar_probe'"' != "" | `"`_hddid_depvar_role_probe'"' != "") {
-            // Match the broader current-surface classification already used by
-            // replay/display fallback: current role provenance can remain
-            // recoverable from e(cmdline) or the posted beta labels even when
-            // one wrapper-local role label is absent, and wrapper fail-close
-            // must also recognize the same current HDDID surface when e(stdg)
-            // or e(alpha) is the malformed field but CIpoint/CIuniform still
-            // advertise the surrounding nonparametric interval surface.
+            // Classify the estimation surface as active when the required
+            // estimation results are present, even if some stored labels
+            // or fields are absent.
             local _hddid_active_surface 1
         }
     }
@@ -271,12 +264,9 @@ program define hddid, eclass
     local _hddid_wrapper_load_rc = _rc
     capture program list _hddid_main
     if `_hddid_wrapper_load_rc' != 0 | _rc != 0 {
-        // Fail closed on wrapper-load failure: leaving a stale HDDID e()
-        // surface behind would make replay or the unsupported hddid_p /
-        // hddid_estat stubs look like the failed current call succeeded.
-        // Legacy/current replayable surfaces can survive with missing e(cmd),
-        // blank e(predict)/e(estat_cmd), or other missing wrapper-only labels,
-        // so detect the broader HDDID surface before deciding whether to clear.
+        // Clear any existing HDDID estimation surface on wrapper-load
+        // failure to prevent invalid results from being misinterpreted
+        // as valid.
         quietly _hddid_wrap_has_surface
         local _hddid_clear_surface = (r(active_surface) != 0)
         if `_hddid_clear_surface' {

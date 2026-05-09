@@ -1,6 +1,5 @@
-// Source-loading this file should publish only the public hddid_dgp2 command.
-// The current DGP2 path is self-contained and does not need legacy resolver
-// helpers on the caller-visible program surface.
+*! Data-generating process 2 for Monte Carlo simulations
+*! Generates panel data with AR(1) covariate structure
 
 capture program drop hddid_dgp2
 
@@ -51,8 +50,7 @@ program define hddid_dgp2
         exit 4
     }
 
-    // Peak footprint is p x-variables plus 13 additional variables created
-    // before the intermediate cleanup drop.
+    // Memory requirement check: peak usage is p covariates plus 13 temporary variables
     local extra_vars = 13
     local maxvar_now = c(maxvar)
     local peak_vars = `p' + `extra_vars'
@@ -68,14 +66,10 @@ program define hddid_dgp2
     local restore_rng = (`"`seed_input'"' != "" & `seed' != -1)
     local caller_rngstate = c(rngstate)
 
-    // The public DGP2 contract is the paper's fixed Section 5 generator.
-    // Keep the correlated-X draw logic inline so source-running this ado
-    // neither depends on sibling helpers nor reserves global Mata names.
-    // A stale or malformed helper would
-    // otherwise be able to change or abort the public DGP command.
+    // Data are generated via direct matrix operations to ensure reproducibility
+    // without external dependencies
 
-    // Build the replacement dataset transactionally so any runtime failure
-    // leaves the caller's data untouched.
+    // Preserve caller's data to enable restoration on error
     preserve
     capture noisily {
         clear
@@ -84,17 +78,13 @@ program define hddid_dgp2
             set seed `seed'
         }
 
-        // --- X covariates: correlated normal X ~ N(0, Sigma) ---
-        // Sigma_{jk} = rho^|j-k| (AR(1) structure). When p==1 this collapses
-        // to the 1x1 matrix [1], so any finite rho is observationally
-        // equivalent and should not block the one-covariate paper DGP.
+        // --- Covariates X: multivariate normal with AR(1) covariance structure ---
+        // Sigma_{jk} = rho^|j-k|. When p=1, Sigma=[1] and rho is unidentified.
         tempname Sigma
         matrix `Sigma' = J(`p', `p', 0)
         forvalues j = 1/`p' {
             forvalues k = 1/`p' {
-                // Parenthesize rho so negative legal AR(1) values keep the
-                // unit diagonal and alternating off-diagonal signs implied by
-                // Sigma_{jk} = rho^|j-k| rather than Stata's unary-minus parse.
+                // Parentheses ensure correct operator precedence for negative rho
                 matrix `Sigma'[`j', `k'] = (`rho')^abs(`j' - `k')
             }
         }
@@ -102,14 +92,13 @@ program define hddid_dgp2
         if `p' == 1 {
             local xdraw_vars x1
         }
-        // Publish the public DGP covariates in double precision so the
-        // correlated-X oracle matches DGP1 and the paper/R Gaussian design.
+        // Generate covariates in double precision
         drawnorm `xdraw_vars', cov(`Sigma') double
 
-        // --- Z covariate ---
+        // --- Continuous covariate Z ---
         gen double z = rnormal()
 
-        // --- Propensity score ---
+        // --- Treatment assignment via propensity score ---
         gen double xtheta = 0
         local ptheta = min(`p', 10)
         forvalues i = 1/`ptheta' {
@@ -118,15 +107,15 @@ program define hddid_dgp2
         gen double prop = invlogit(xtheta)
         gen byte treat = rbinomial(1, prop)
 
-        // --- Base period outcome (heteroscedastic) ---
+        // --- Baseline outcome with heteroscedastic error ---
         gen double eps_tilde = rnormal()
         gen double y0_base = eps_tilde * (1/sqrt(2)*z + 1/sqrt(2)*x1)
 
-        // --- Error terms (paper DGP keeps both post shocks standard normal) ---
+        // --- Error terms for post-treatment periods ---
         gen double eps0 = rnormal()
         gen double eps1 = rnormal()
 
-        // --- Linear parts ---
+        // --- Linear index components ---
         gen double xbeta1 = 0
         gen double xbeta0 = 0
         local pbeta = min(`p', 15)
@@ -136,12 +125,12 @@ program define hddid_dgp2
         }
         gen double fz = exp(z)
 
-        // --- Post-period outcome ---
+        // --- Post-treatment outcome ---
         gen double y1 = y0_base + (xbeta1 + fz + eps1)*treat ///
                                  + (xbeta0 + eps0)*(1-treat)
         gen double deltay = y1 - y0_base
 
-        // --- Clean intermediate variables ---
+        // --- Remove temporary variables ---
         drop xtheta prop eps_tilde y0_base eps0 eps1 xbeta1 xbeta0 fz y1
     }
 

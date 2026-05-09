@@ -73,11 +73,8 @@ program define _hddid_p_postest_parse_methodopt, rclass
                     return local raw `"`_hddid_opts_trim'"'
                     exit
                 }
-                // A fully quoted bare token like 'ra' belongs to the
-                // estimator-style postest parser, not the method() precheck.
-                // Let that parser classify the fixed-AIPW misuse instead of
-                // feeding the quoted token back into regexr(), which Stata can
-                // misread as function syntax and abort with unknown function().
+                // Quoted bare estimator-family tokens are handled
+                // downstream by the estimator-style parser.
                 exit
             }
         }
@@ -94,10 +91,8 @@ program define _hddid_p_postest_parse_methodopt, rclass
         exit
     }
     local _hddid_methodscan_lc `"`_hddid_opts_raw_lc'"'
-    // Nested method(...) text inside an estimator-family payload (for example
-    // estimator= method(ra)) is part of malformed estimator syntax, not a real
-    // method() request. Keep the method-domain precheck from stealing those
-    // cases before estimator-family guidance can classify them.
+    // Remove nested method() text inside estimator-family payloads
+    // so that the method-domain precheck does not intercept them.
     local _hddid_methodscan_lc = ///
         regexr(`"`_hddid_methodscan_lc'"', ///
         "(^|[ ,])estimator[ ]*=[ ]*[(]?[ ]*method[ ]*[(][^)]*[)][ ]*[)]?", ///
@@ -201,15 +196,11 @@ program define _hddid_p_postest_parse_estopt, rclass
 
     return clear
     local _hddid_opts_raw `optsraw'
-    // Keep postestimation estimator-style guidance self-contained so these
-    // stubs do not reload parser helpers from a shadow hddid.ado bundle.
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(92) + char(34), char(34), .)
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(92) + char(39), char(39), .)
-    // Stata treats tabs/newlines as legal whitespace in command input.
-    // Normalize them here so unsupported postestimation guidance classifies
-    // estimator-family misuse independently of the caller's whitespace choice.
+    // Normalize whitespace for consistent parsing.
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(9), " ", .)
     local _hddid_opts_raw = ///
@@ -219,11 +210,8 @@ program define _hddid_p_postest_parse_estopt, rclass
     local _hddid_opts_raw_orig = ///
         strtrim(subinstr(`"`_hddid_opts_raw'"', ",", " ", .))
     local _hddid_opts_raw = lower(`"`_hddid_opts_raw_orig'"')
-    // Preserve leading bare single-quoted estimator-style tokens before the
-    // alias-assignment regexes below. Those later regexm() calls are meant for
-    // ra=/ipw=/aipw= spellings; letting a bare leading token like 'ra'
-    // continue that far can leak parser-level unknown function() instead of
-    // the public fixed-AIPW guidance.
+    // Match leading bare single-quoted estimator tokens before
+    // alias-assignment patterns.
     local _hddid_match = regexm(lower(`"`_hddid_opts_raw_orig'"'), ///
         "(^|[ ])(('(r|ra|i|ip|ipw|a|ai|aip|aipw)'))([ ]|$)")
     if `_hddid_match' {
@@ -248,9 +236,7 @@ program define _hddid_p_postest_parse_estopt, rclass
             exit
         }
     }
-    // Preserve empty quoted estimator payloads before collapsing doubled
-    // quotes; otherwise estimator=('') / estimator=("") is mis-echoed as the
-    // different malformed token estimator=().
+    // Match empty quoted estimator payloads before doubled-quote collapsing.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*[(][ ]*["]["][ ]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -267,10 +253,7 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Empty quoted alias payloads are malformed alias assignments in their
-    // own right. Preserve the exact raw token before quote-stripping or the
-    // generic alias parser can collapse ra="" to ra= or swallow later
-    // method()/q()/display options into the same echoed token.
+    // Match empty quoted alias payloads before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*["]["])([ ]|$)"')
     if `_hddid_match' {
@@ -303,11 +286,7 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // method() text inside alias assignments is part of the malformed alias
-    // token itself. Catch it before quote-stripping and later alias-follow
-    // trimming, otherwise spaced or glued forms like ra = method(Pol),
-    // ra=method(Pol), or quoted aipw=("ipw")method(Pol) lose the exact
-    // public raw echo.
+    // Match method() text within alias assignments before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*method[ ]*[(][^)]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -346,10 +325,8 @@ program define _hddid_p_postest_parse_estopt, rclass
     local _hddid_opts_raw_quoted = ///
         subinstr(`"`_hddid_opts_raw_quoted'"', ///
         char(39) + char(39), char(39), .)
-    // Canonical quoted parenthesized alias payloads followed by a real
-    // method() token should keep the same alias-head stub guidance as the
-    // already-fixed noncanonical quoted path, with method() left outside the
-    // offending estimator-style echo.
+    // Quoted parenthesized alias payloads followed by method()
+    // exclude method() from the alias echo.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["](r|ra|i|ip|ipw|a|ai|aip|aipw)["][ ]*[)])[ ]+(method[ ]*[(][^)]*[)])"')
     if `_hddid_match' {
@@ -410,10 +387,7 @@ program define _hddid_p_postest_parse_estopt, rclass
             exit
         }
     }
-    // Preserve exact raw echoes for quoted parenthesized alias assignments
-    // before later quote-stripping. Otherwise malformed alias switches such as
-    // ra=("ipw") or aipw=('ipw') are rewritten to de-quoted alias tokens in
-    // public guidance even though the user supplied quoted parenthesized text.
+    // Match quoted parenthesized alias assignments before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -456,9 +430,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // A quoted parenthesized alias token is already malformed by itself.
-    // If a real later method(Tri)/method(Pol) follows, keep that later option
-    // outside the offending raw echo instead of swallowing it into the alias.
+    // Quoted parenthesized alias tokens followed by method()
+    // exclude method() from the alias echo.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["]([^"]*)["][ ]*[)])[ ]+(method[ ]*[(][^)]*[)])"')
     if `_hddid_match' {
@@ -535,10 +508,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // Keep quoted parenthesized alias assignments with glued suffix text
-    // intact before quote-stripping. Otherwise malformed alias tokens such as
-    // ra=("ipw")foo or aipw=('ra')foo are rewritten to de-quoted echoes even
-    // though the user supplied one quoted malformed estimator-family token.
+    // Match quoted parenthesized alias assignments with trailing
+    // text before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)][^ ]+)"')
     if `_hddid_match' {
@@ -603,10 +574,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // Preserve exact raw echoes for quoted nonparenthesized alias assignments
-    // before later quote-stripping. Otherwise ra='ipw' or aipw="ra" is
-    // rewritten to de-quoted alias text in public postest guidance even
-    // though the caller typed quoted malformed estimator-family input.
+    // Match quoted nonparenthesized alias assignments before
+    // quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*["]([^"]*)["])([ ]|$)"')
     if `_hddid_match' {
@@ -707,10 +676,7 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // Keep exact raw echoes for quoted bare estimator-family tokens when the
-    // next syntax fragment is a real qualifier boundary rather than part of
-    // the estimator token itself. Otherwise `"ra" if 1' or `summarize "ipw"
-    // if 1' is rewritten to de-quoted ra/ipw before postestimation guidance.
+    // Match quoted bare estimator-family tokens before if/in qualifiers.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(["](r|ra|i|ip|ipw|a|ai|aip|aipw)["])([ ]+(if|in)([ ]|$)|[ ]*$)"')
     if `_hddid_match' {
@@ -771,12 +737,8 @@ program define _hddid_p_postest_parse_estopt, rclass
             exit
         }
     }
-    // A quoted parenthesized bare token like (`"ra"') is the same malformed
-    // estimator-family switch as bare `ra'/`ipw'. One redundant outer
-    // parenthesis layer, e.g. (("ra")) or ((ra)), does not change that
-    // meaning. Classify these before later quote stripping so both bare and
-    // if/in forms preserve the exact raw token and reach the same single
-    // stub-guidance path.
+    // Quoted parenthesized and doubly parenthesized estimator-family
+    // tokens are classified before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(([(][ ]*[(][ ]*["](r|ra|i|ip|ipw|a|ai|aip|aipw)["][ ]*[)][ ]*[)]))([ ]|$)"')
     if `_hddid_match' {
@@ -897,10 +859,8 @@ program define _hddid_p_postest_parse_estopt, rclass
             exit
         }
     }
-    // Keep quoted nonparenthesized estimator assignments with glued suffix text
-    // intact before quote-stripping. Otherwise estimator="ra"foo or
-    // estimator='ipw'foo is rewritten to de-quoted estimator=rafoo /
-    // estimator=ipwfoo in the public invalid-line echo.
+    // Match quoted estimator assignments with trailing text before
+    // quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*["][^"]*["][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -999,10 +959,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Keep quoted parenthesized estimator assignments with glued suffix text
-    // intact before quote-stripping. Otherwise estimator=('ra')foo or
-    // estimator=("ipw")foo is rewritten to de-quoted estimator=(ra)foo /
-    // estimator=(ipw)foo in the public invalid-line echo.
+    // Match quoted parenthesized estimator assignments with trailing
+    // text before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -1093,12 +1051,8 @@ program define _hddid_p_postest_parse_estopt, rclass
             exit
         }
     }
-    // Bare postcomma parenthesized estimator-family tokens like `(ra)' are
-    // still malformed attempts to switch away from the paper's fixed AIPW
-    // path. One redundant outer parenthesis layer, e.g. `((ra))', does not
-    // change that. Classify these before the generic parenthesized-invalid
-    // branches below so postestimation can show one consistent stub guidance
-    // path.
+    // Parenthesized and doubly parenthesized estimator-family tokens
+    // are classified before generic parenthesized-invalid branches.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(([(][ ]*[(][ ]*(r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*[)][ ]*[)]))([ ]|$)")
     if `_hddid_match' {
@@ -1196,9 +1150,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Illegal short t()/tr() followers are not separate legal treat()
-    // options. Keep the full malformed estimator token intact rather than
-    // letting the bare estimator=(...) branch below clip the public raw echo.
+    // Trailing t()/tr() after estimator=(...) is retained in the
+    // full malformed token.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*[(][ ]*[^)]*[)][ ]+(t|tr)[ ]*[(][^)]*[)])([ ]|$)")
     if `_hddid_match' {
@@ -1248,14 +1201,9 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // An empty estimator= assignment must fail on the malformed estimator
-    // token itself. The next legitimate option-looking token, qualifier, or
-    // weight clause, including Stata's legal abbreviations such as alp(), is
-    // not an estimator payload and must not be swallowed into the raw echo.
-    // But estimator= method(<bad>) is different: the nested method() text is
-    // itself malformed estimator RHS content once the payload leaves the
-    // Pol/Tri sieve-basis domain, so the public estimator echo should keep
-    // that whole RHS token.
+    // An empty estimator= assignment fails on the token itself;
+    // subsequent options are excluded.  estimator=method() with an
+    // invalid sieve-basis name retains the full right-hand side.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*method[ ]*[(][ ]*([^)]*)[ ]*[)])([ ]|$)")
     if `_hddid_match' {
@@ -1381,10 +1329,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment"
         exit
     }
-    // A complete parenthesized estimator=(...) token should stand on its own
-    // even when a real postestimation option follows. Otherwise the generic
-    // multi-token assignment branch swallows later method()/alpha()/... tokens
-    // into the public estimator echo, even though they are separate options.
+    // A complete estimator=(...) token is bounded before subsequent
+    // options.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*[(][ ]*([^)]*)[ ]*[)])[ ]+((`_hddid_estopt_lparen_follow')|(`_hddid_estopt_bare_follow'))")
     if `_hddid_match' {
@@ -1400,9 +1346,8 @@ program define _hddid_p_postest_parse_estopt, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Illegal short t()/tr() followers are not separate legal treat()
-    // options. Keep the full malformed estimator token intact rather than
-    // clipping the public raw echo back to estimator=(...) alone.
+    // Trailing t()/tr() after estimator=(...) is retained in the
+    // full malformed token.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*[(][ ]*[^)]*[)][ ]+(t|tr)[ ]*[(][^)]*[)])([ ]|$)")
     if `_hddid_match' {
@@ -1599,9 +1544,8 @@ program define _hddid_p_postest_parse_estopt, rclass
                 }
             }
         }
-        // Postestimation alias assignments should stop at ra=/ipw=/aipw=
-        // when the next token is really a separate legal option head,
-        // abbreviation, or Stata syntax fragment.
+        // Alias assignments are bounded at the equals sign when
+        // followed by a separate option or syntax fragment.
         local _hddid_alias_lparen_follow_1 ///
             "^(c|cf|cfo|cfor|cform|cforma|cformat|ci|cit|city|cityp|citype|"
         local _hddid_alias_lparen_follow_2 ///
@@ -1786,7 +1730,7 @@ program define _hddid_p_postest_show_invalid
     di as error "{bf:hddid}: invalid estimator-style option value: " ///
         as text `"`raw'"'
     di as error "  Reason: {bf:method()} selects only the sieve basis family; it is not an AIPW, IPW, or RA estimator switch"
-    di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+    di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
     di as error "  Use {bf:method(Pol)} or {bf:method(Tri)} to choose the sieve basis family"
 end
 
@@ -1945,7 +1889,7 @@ program define _hddid_p_stub_prescan, rclass
                     local _hddid_pst_method_note 1
                 }
             }
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             if `_hddid_pst_method_note' {
                 di as error "  Reason: {bf:method()} is an estimation option that only picks the {bf:Pol}/{bf:Tri} sieve basis; it is not a supported postestimation token."
             }
@@ -1953,12 +1897,12 @@ program define _hddid_p_stub_prescan, rclass
             exit 198
         }
         if `"`r(raw)'"' != "" {
-            di as error "{bf:hddid}: predict is not supported."
-            di as error "  Reason: hddid posts debiased estimates and confidence objects for beta and the omitted-intercept z-varying surface"
-            di as error "  on the stored evaluation grid, but it does not define observation-level fitted values."
+            di as error "{bf:hddid}: bare predict (or predict with an estimator-style option) is not supported."
+            di as error "  Reason: observation-level fitted values are produced by {bf:predict} {it:newvar} {bf:[, xb|fz|tau]}."
+            di as error "  Aggregate inference objects for the parametric beta block and the nonparametric {bf:f(z)} surface live on the stored evaluation grid."
             di as error "  Offending method() input: " as text `"`r(raw)'"'
             di as error "  Reason: {bf:method()} is an estimation option that only picks the {bf:Pol}/{bf:Tri} sieve basis; it is not a supported postestimation token."
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             di as error "  Use bare {bf:hddid_p}; the stored sieve basis is already published in {bf:e(method)}."
             exit 198
         }
@@ -1975,7 +1919,7 @@ program define _hddid_p_stub_prescan, rclass
             substr(`"`_hddid_raw0'"', `_hddid_raw0_comma' + 1, .)
         if strtrim(`"`_hddid_raw0_postcomma'"') == "" {
             di as error "{bf:hddid}: predict does not accept a trailing comma"
-            di as error "  Reason: the unsupported {bf:hddid_p} stub publishes no options contract, so a lone comma is malformed call syntax"
+            di as error "  Reason: {bf:hddid_p} does not accept options; a lone comma is malformed syntax"
             di as error "  Use bare {bf:hddid_p} or supply a nonempty estimator-style token only when you want that misuse echoed back"
             exit 198
         }
@@ -2062,12 +2006,8 @@ program define _hddid_p_stub_prescan, rclass
             local _hddid_ifin_token_raw `"`r(raw)'"'
             local _hddid_ifin_token_canonical `"`r(canonical)'"'
             if `"`_hddid_ifin_token_raw'"' != "" {
-                // Once if/in starts the raw command line, any trailing
-                // RA/IPW/AIPW-family token is no longer a plausible newvar
-                // or other command stub head. Preserve bare tokens here too
-                // so unsupported estimator-family misuse after qualifiers
-                // stays on package guidance instead of leaking syntax-level
-                // invalid-token errors.
+                // Trailing estimator-family tokens after if/in qualifiers
+                // are classified for package-level guidance.
                 local _hddid_estopt_canonical `"`_hddid_ifin_token_canonical'"'
                 local _hddid_estopt_raw `"`_hddid_ifin_token_raw'"'
             }
@@ -2194,8 +2134,7 @@ program define _hddid_p_stub_prescan, rclass
         }
     }
 
-    // Keep a predict() stub so unsupported postestimation still reaches the
-    // package guidance instead of leaking parser-level weight errors.
+    // Unsupported postestimation input is routed to package guidance.
     if !`_hddid_prescan_no_comma_assign' & !`_hddid_prescan_skip_syntax' {
         syntax [anything] [fw aw pw iw] [if] [in] [, *]
     }
@@ -2299,13 +2238,12 @@ capture program drop hddid_p
 program define hddid_p
     version 16
 
-    // --- Real predict support: xb, fz, tau ---
-    // Intercept early and handle supported options before the legacy stub.
+    // Supported predict options: xb, fz, tau
     if `"`e(cmd)'"' == "hddid" {
         capture confirm matrix e(gammabar)
         local _hddid_has_gammabar = (_rc == 0)
 
-        // Parse: predict newvar [if] [in] [, xb fz tau]
+        // Syntax: predict newvar [if] [in] [, xb fz tau]
         local 0_saved `"`0'"'
         capture syntax newvarname [if] [in] [, XB FZ TAU]
         if _rc == 0 {
@@ -2318,7 +2256,7 @@ program define hddid_p
                 local tau "tau"
             }
 
-            // --- xb: linear prediction X'beta_debias ---
+            // xb: linear prediction X'beta_debiased
             if "`xb'" != "" {
                 tempname _hddid_p_b
                 matrix `_hddid_p_b' = e(b)
@@ -2327,11 +2265,11 @@ program define hddid_p
                 exit
             }
 
-            // --- fz and tau require gammabar + a0 ---
+            // fz and tau require e(gammabar) and e(a0)
             if !`_hddid_has_gammabar' {
                 di as error "{bf:hddid predict}: e(gammabar) not found in stored results"
-                di as error "  Reason: this estimation was run before predict support was added"
-                di as error "  Re-run {bf:hddid} to produce results with predict support"
+                di as error "  Reason: stored results lack {bf:e(gammabar)}; re-estimate to enable predict"
+                di as error "  Re-run {bf:hddid} to produce results compatible with predict"
                 exit 198
             }
 
@@ -2344,12 +2282,11 @@ program define hddid_p
             local _hddid_p_q = e(q)
             local _hddid_p_zvar `"`e(zvar)'"'
 
-            // Construct sieve basis for each observation's Z value
+            // Construct sieve basis at each observation's Z value
             tempvar _hddid_p_fz_val
             quietly gen double `_hddid_p_fz_val' = . if `touse'
 
-            // Use Mata to construct sieve basis and multiply by gammabar.
-            // Individual mata: calls avoid run/compile issues in validation.
+            // Compute f(z) = psi(z)'gammabar via Mata.
             tempname _hddid_p_fz_mata
             if `"`_hddid_p_method'"' == "Pol" {
                 mata: st_matrix("`_hddid_p_fz_mata'", ///
@@ -2376,7 +2313,7 @@ program define hddid_p
                 exit
             }
 
-            // --- tau: full prediction X'beta + f(z) ---
+            // tau: heterogeneous ATT prediction X'beta + f(z)
             tempname _hddid_p_b
             matrix `_hddid_p_b' = e(b)
             tempvar _hddid_p_xb_val
@@ -2385,11 +2322,10 @@ program define hddid_p
             label variable `varlist' "Heterogeneous ATT prediction (X'beta + f(z))"
             exit
         }
-        // If syntax parse failed, fall through to legacy stub
         local 0 `"`0_saved'"'
     }
 
-    // --- Legacy stub: unsupported-predict guidance ---
+    // Unsupported-predict guidance
     capture program list _hddid_pst_cmdroles
     if _rc != 0 {
         local _hddid_pst_pkgdir `"$HDDID_SOURCE_RUN_PKGDIR"'
@@ -2428,19 +2364,16 @@ program define hddid_p
         "^(r|ra|i|ip|ipw|a|ai|aip|aipw)([ ]*(,|if([ ]|$)|in([ ]|$))|$)") {
         local _hddid_predict_head_bare_alias = lower(strtrim(regexs(1)))
     }
-    // predict allows an optional storage type before the would-be new variable
-    // name. Keep typed alias-like newvar heads such as double ra or float ipw
-    // on the same unsupported-predict path as untyped ra/ipw/aipw newvars.
+    // Storage-type-prefixed estimator-family tokens are classified
+    // alongside untyped forms.
     if `"`_hddid_predict_head_bare_alias'"' == "" & ///
         regexm(`"`_hddid_cmdline_predict_raw_lc'"', ///
         "^(byte|int|long|float|double)[ ]+(r|ra|i|ip|ipw|a|ai|aip|aipw)([ ]|$)") {
         local _hddid_predict_head_bare_alias = lower(strtrim(regexs(2)))
     }
-    // hddid_p is the predict stub. A bare leading token in this slot is the
-    // would-be new variable name, not estimator-family syntax, even when the
-    // name literally equals ra/ipw/aipw. Keep quoted/parenthesized/assignment
-    // spellings on the estimator-style guidance path, but let legal bare
-    // variable names fall through to the generic unsupported-predict contract.
+    // Bare estimator-family tokens in the newvar slot are treated as
+    // variable names; quoted, parenthesized, and assignment forms
+    // remain on the estimator-style guidance path.
     if `"`_hddid_estopt_raw'"' != "" & `"`_hddid_predict_head_bare_alias'"' != "" & ///
         lower(`"`_hddid_estopt_raw'"') == `"`_hddid_predict_head_bare_alias'"' {
         local _hddid_estopt_invalid ""
@@ -2579,24 +2512,18 @@ program define hddid_p
             (`"`_hddid_depvar_probe'"' != "" | `"`_hddid_depvar_role_probe'"' != ""))
         if `_hddid_surface_core_ok' & `_hddid_surface_interval_ok' & ///
             `_hddid_surface_role_ok' {
-            // Recognize the surrounding current HDDID surface from its core
-            // posted role/grid/debiased objects even when one published
-            // nonparametric inference object is the malformed field. Missing
-            // e(stdg) or e(alpha) should still be classified as the same
-            // current HDDID surface whenever the posted interval objects are
-            // present, so the later guards can surface that exact saved-results
-            // corruption instead of degrading the same result set to a generic
-            // no-active-HDDID classification.
+            // An HDDID surface is recognized by its core stored results
+            // even when individual inference objects are incomplete.
             local _hddid_active_surface 1
         }
     }
     if !`_hddid_active_surface' {
-        di as error "{bf:hddid}: predict is not supported."
+        di as error "{bf:hddid}: predict requires an active hddid result surface."
         di as error "  Reason: no active {bf:hddid} result set is available for postestimation."
         if `"`_hddid_estopt_raw'"' != "" {
             di as error `"  Offending estimator-style input: {bf:`_hddid_estopt_raw'}"'
             di as error "  Reason: {bf:method()} only picks the {bf:Pol}/{bf:Tri} sieve basis; it is not an estimator-family switch."
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             if `"`_hddid_estopt_canonical'"' == "" {
                 _hddid_p_postest_show_invalid, raw(`"`_hddid_estopt_raw'"')
             }
@@ -2604,17 +2531,15 @@ program define hddid_p
         di as error "  Run {bf:hddid} first, then inspect the stored {bf:e()} result surface."
         exit 198
     }
-    // Estimator-family misuse is parser-level input, not a property of the
-    // current saved-results surface. If the user typed aipw/ra/ipw syntax
-    // into predict, surface that misuse immediately instead of letting
-    // malformed e() metadata mask it with an unrelated current-surface error.
+    // Estimator-family misuse in predict input is reported before
+    // saved-results metadata errors.
     if `"`_hddid_estopt_raw'"' != "" {
-        di as error "{bf:hddid}: predict is not supported."
-        di as error "  Reason: hddid posts debiased estimates and confidence objects for beta and the omitted-intercept z-varying surface"
-        di as error "  on the stored evaluation grid, but it does not define observation-level fitted values."
+        di as error "{bf:hddid}: bare predict (or predict with an estimator-style option) is not supported."
+        di as error "  Reason: observation-level fitted values are produced by {bf:predict} {it:newvar} {bf:[, xb|fz|tau]}."
+        di as error "  Aggregate inference objects for the parametric beta block and the nonparametric {bf:f(z)} surface live on the stored evaluation grid."
         di as error `"  Offending estimator-style input: {bf:`_hddid_estopt_raw'}"'
         di as error "  Reason: {bf:method()} only picks the {bf:Pol}/{bf:Tri} sieve basis; it is not an estimator-family switch."
-        di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+        di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
         if `"`_hddid_estopt_canonical'"' == "" {
             _hddid_p_postest_show_invalid, raw(`"`_hddid_estopt_raw'"')
         }
@@ -2646,13 +2571,12 @@ program define hddid_p
         capture program list _hddid_p_current_surface
         if _rc != 0 {
             di as error "{bf:hddid}: failed to load {bf:_hddid_p_current_surface.ado}"
-            di as error "  Reason: the unsupported postestimation stub now delegates current-surface validation to a sibling helper"
-            di as error "  Please reinstall the hddid package or remove shadow/old copies from adopath"
+            di as error "  Reason: current-surface validation requires {bf:_hddid_p_current_surface.ado}"
+            di as error "  Please reinstall the {bf:hddid} package or remove outdated copies from adopath"
             exit 198
         }
     }
 
-    // Public-contract audit anchor for the delegated current-surface helper: if the retained rows stay in the same order and the supplied fold-aligned nuisances are the same, the corresponding nofirst if/in run and physically subsetted run must return the same retained-sample estimates.
     local _hddid_current_surface_opts ""
     if `"`_hddid_estopt_raw'"' != "" {
         local _hddid_current_surface_opts ///

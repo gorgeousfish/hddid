@@ -57,6 +57,7 @@ capture mata: mata drop _hddid_assert_symmetric_psd()
 capture mata: mata drop _hddid_assert_symmetric_finite()
 capture mata: mata drop _hddid_assert_nanfb_stdg_carrier()
 capture mata: mata drop _hddid_assert_vcovx_stdx()
+capture mata: mata drop _hddid_apply_inverse_xord()
 // Structs
 capture mata: mata drop _hddid_beta_result()
 capture mata: mata drop _hddid_gamma_result()
@@ -102,8 +103,10 @@ struct _hddid_result {
     real matrix    V
     real rowvector stdg
     real rowvector tc
+    real rowvector tc_sup
     real matrix    CIpoint
     real matrix    CIuniform
+    real matrix    CIuniform_sup
     real colvector gammabar
     real scalar    a0
 }
@@ -2196,16 +2199,38 @@ struct _hddid_result scalar _hddid_aggregate_folds(
             // CIuniform = gdebias because stdg == 0 rowwise, so preserve the
             // constant-fold shortcut instead of forcing a 0/0 bootstrap law.
             result.tc = (0, 0)
+            result.tc_sup = (0, 0)
         }
         else {
             // Zero-variance evaluation rows contribute nothing to the sup
             // envelope because their CIuniform entries are already pinned at
             // gdebias. Calibrate tc on the positive-SE rows only.
+            // _hddid_bootstrap_tc() publishes sup-quantile tc on the same
+            // tboot draws via __hddid_aggregate_tc_sup (a separate 1 x 2
+            // Stata matrix), so the aggregate layer can attach both envelope
+            // and sup objects without changing the return contract.
+            stata("capture matrix drop __hddid_aggregate_tc_sup")
             result.tc = _hddid_bootstrap_tc(
                 Vf_agg,
                 zbasispredict[active_idx, .],
                 result.stdg[active_idx],
                 0, 1, alpha, nboot, bootstrap_seed)
+            result.tc_sup = st_matrix("__hddid_aggregate_tc_sup")
+            if (rows(result.tc_sup) != 1 | cols(result.tc_sup) != 2) {
+                errprintf("_hddid_aggregate_folds(): expected __hddid_aggregate_tc_sup as 1 x 2 after bootstrap; got %g x %g\n",
+                    rows(result.tc_sup), cols(result.tc_sup))
+                _error(3498)
+            }
+            if (hasmissing(result.tc_sup)) {
+                errprintf("_hddid_aggregate_folds(): sup-quantile tc must be finite; found missing values\n")
+                _error(3498)
+            }
+            if (result.tc_sup[1, 1] > result.tc_sup[1, 2]) {
+                errprintf("_hddid_aggregate_folds(): sup-quantile tc must satisfy lower <= upper; got (%g, %g)\n",
+                    result.tc_sup[1, 1], result.tc_sup[1, 2])
+                _error(3498)
+            }
+            stata("capture matrix drop __hddid_aggregate_tc_sup")
         }
     }
     else {
@@ -2257,6 +2282,11 @@ struct _hddid_result scalar _hddid_aggregate_folds(
             }
         }
         result.tc = tc_ref
+        // The fold-level tc fallback path runs only when bootstrap inputs
+        // are absent; current hddid always supplies bootstrap inputs at the
+        // aggregate layer, so sup-quantile tc degenerates to the envelope
+        // for this defensive branch (CIuniform_sup == CIuniform).
+        result.tc_sup = tc_ref
     }
     
     // Pointwise CI for beta and g(z0).
@@ -2270,11 +2300,22 @@ struct _hddid_result scalar _hddid_aggregate_folds(
         _error(3498)
     }
     
-    // Uniform CI band for g(z0) only.
+    // Uniform CI band (envelope) for g(z0) only.
     result.CIuniform = (result.gdebias + result.tc[1] * result.stdg) \
                        (result.gdebias + result.tc[2] * result.stdg)
     if (hasmissing(result.CIuniform)) {
         errprintf("_hddid_aggregate_folds(): CIuniform must be finite after combining aggregate gdebias/stdg/tc\n")
+        _error(3498)
+    }
+
+    // Uniform CI band (sup-quantile) for g(z0) only.  Shares the same
+    // studentized bootstrap draws as the envelope but uses a tighter
+    // critical value c_sup = quantile_{1-alpha}(max_j |T_j|), giving a
+    // symmetric band gdebias +/- c_sup * stdg.
+    result.CIuniform_sup = (result.gdebias + result.tc_sup[1] * result.stdg) \
+                           (result.gdebias + result.tc_sup[2] * result.stdg)
+    if (hasmissing(result.CIuniform_sup)) {
+        errprintf("_hddid_aggregate_folds(): CIuniform_sup must be finite after combining aggregate gdebias/stdg/tc_sup\n")
         _error(3498)
     }
     
@@ -3695,9 +3736,10 @@ real rowvector _hddid_bootstrap_tc(
     real scalar alpha, real scalar nboot, real scalar seed)
 {
     real matrix U, Vt, Vf_sqrt, bootrand, sfs, tboot, implied_cov, Vf_sym
-    real colvector vf_eval, implied_diag, row_sorted
-    real rowvector tc, sf_diag, sf_point, sf_implied, q_pair
+    real colvector vf_eval, implied_diag, row_sorted, sup_sorted
+    real rowvector tc, sf_diag, sf_point, sf_implied, q_pair, tmax_row
     real rowvector vf_eval_sym
+    real scalar c_sup
     real scalar qq, q, i, j, seeded_draw
     real scalar vf_scale, vf_tol, sf_scale, sf_tol
     transmorphic scalar rngstate_before
@@ -3878,10 +3920,11 @@ real rowvector _hddid_bootstrap_tc(
         tboot[i,.] = tboot[i,.] :/ sfs'[i,.]
     }
     
-    // Match the R reference implementation's current finite-grid interval
-    // object: take type-7 lower/upper quantiles rowwise over the studentized
+    // Envelope uniform CI critical values (back-compatible):
+    // take type-7 lower/upper quantiles rowwise over the studentized
     // bootstrap draws and then aggregate them as the envelope pair
-    // (min_j lower_j, max_j upper_j).
+    // (min_j lower_j, max_j upper_j).  Conservative: covers each z_j with
+    // probability at least 1-alpha but can over-cover when qq is large.
     tc = (., .)
     for (i = 1; i <= qq; i++) {
         row_sorted = sort(tboot[i,.]', 1)
@@ -3896,6 +3939,24 @@ real rowvector _hddid_bootstrap_tc(
             tc[1, 2] = max((tc[1, 2], q_pair[1, 2]))
         }
     }
+
+    // Sup-quantile uniform CI critical values (tighter than envelope):
+    // c_sup = type-7 quantile of { max_j |t_{j,i}| }_{i=1..nboot} at 1-alpha.
+    // The uniform band is symmetric (-c_sup, +c_sup) because the bootstrap
+    // statistic M_i = max_j |T_j| is nonnegative and its (1-alpha) quantile
+    // gives the smallest c for which Pr(max_j |T_j| <= c) >= 1-alpha.
+    // Published alongside the envelope via __hddid_aggregate_tc_sup so the
+    // aggregate layer can attach it to the struct without altering the
+    // return contract of _hddid_bootstrap_tc().
+    if (qq == 1) {
+        tmax_row = abs(tboot[1, .])
+    }
+    else {
+        tmax_row = colmax(abs(tboot))
+    }
+    sup_sorted = sort(tmax_row', 1)
+    c_sup = _hddid_quantile_type7_sorted(sup_sorted, 1 - alpha)
+    st_matrix("__hddid_aggregate_tc_sup", (-c_sup, c_sup))
 
     return(tc)
 }
@@ -4125,8 +4186,10 @@ void _hddid_run_aggregate(real scalar K, real scalar alpha,
     st_matrix("__hddid_final_V", J(0, 0, .))
     st_matrix("__hddid_final_stdg", J(0, 0, .))
     st_matrix("__hddid_final_tc", J(0, 0, .))
+    st_matrix("__hddid_final_tc_sup", J(0, 0, .))
     st_matrix("__hddid_final_CIpoint", J(0, 0, .))
     st_matrix("__hddid_final_CIuniform", J(0, 0, .))
+    st_matrix("__hddid_final_CIuniform_sup", J(0, 0, .))
     st_matrix("__hddid_final_alpha", J(0, 0, .))
 
     if (K < 2 | K != trunc(K) | K >= .) {
@@ -4179,8 +4242,10 @@ void _hddid_run_aggregate(real scalar K, real scalar alpha,
     st_matrix("__hddid_final_V", final_result.V)
     st_matrix("__hddid_final_stdg", final_result.stdg)
     st_matrix("__hddid_final_tc", final_result.tc)
+    st_matrix("__hddid_final_tc_sup", final_result.tc_sup)
     st_matrix("__hddid_final_CIpoint", final_result.CIpoint)
     st_matrix("__hddid_final_CIuniform", final_result.CIuniform)
+    st_matrix("__hddid_final_CIuniform_sup", final_result.CIuniform_sup)
     st_matrix("__hddid_final_alpha", (alpha))
 }
 
@@ -4191,20 +4256,24 @@ void _hddid_post_results(string scalar b_name, string scalar V_name,
     string scalar xdebias_name, string scalar gdebias_name,
     string scalar stdx_name, string scalar stdg_name,
     string scalar tc_name, string scalar CIpoint_name,
-    string scalar CIuniform_name, | real scalar qq_expected)
+    string scalar CIuniform_name, | real scalar qq_expected,
+    string scalar tc_sup_name, string scalar CIuniform_sup_name)
 {
     // Read from Stata matrix space (populated by _hddid_run_aggregate)
     // instead of external struct (which gets destroyed by cvlasso)
     real matrix V_val
     real matrix gdebias_val, stdg_val, CIpoint_val, CIuniform_val, alpha_val
-    real rowvector xdebias_val, stdx_val, tc_val
+    real matrix CIuniform_sup_val, ciuniform_sup_oracle
+    real rowvector xdebias_val, stdx_val, tc_val, tc_sup_val
     real matrix ciuniform_oracle, cipoint_oracle
     real scalar qq, v_sym_gap
     real scalar ciuniform_gap, ciuniform_scale, ciuniform_tol
+    real scalar ciuniform_sup_gap, ciuniform_sup_scale, ciuniform_sup_tol
     real scalar ci_point_gap, ci_point_scale, ci_point_tol, z_crit
-    real scalar has_param_block, has_nonparam_block
+    real scalar has_param_block, has_nonparam_block, publish_sup
     real scalar tc_sym_gap, tc_sym_scale, tc_sym_tol
     real scalar stdg_absmax, stdg_scale, zero_stdg_tol, tc_scale, tc_tol
+    real scalar tc_sup_scale, tc_sup_tol
     real scalar j
     xdebias_val = st_matrix("__hddid_final_xdebias")
     stdx_val = st_matrix("__hddid_final_stdx")
@@ -4212,9 +4281,19 @@ void _hddid_post_results(string scalar b_name, string scalar V_name,
     gdebias_val = st_matrix("__hddid_final_gdebias")
     stdg_val = st_matrix("__hddid_final_stdg")
     tc_val = st_matrix("__hddid_final_tc")
+    tc_sup_val = st_matrix("__hddid_final_tc_sup")
     CIpoint_val = st_matrix("__hddid_final_CIpoint")
     CIuniform_val = st_matrix("__hddid_final_CIuniform")
+    CIuniform_sup_val = st_matrix("__hddid_final_CIuniform_sup")
     alpha_val = st_matrix("__hddid_final_alpha")
+
+    publish_sup = (args() >= 12)
+    if (publish_sup) {
+        if (strtrim(tc_sup_name) == "" | strtrim(CIuniform_sup_name) == "") {
+            errprintf("_hddid_post_results(): tc_sup_name and CIuniform_sup_name must be nonblank when sup-quantile publishing is requested\n")
+            _error(3498)
+        }
+    }
 
     if (args() < 10) {
         qq_expected = cols(gdebias_val)
@@ -4268,6 +4347,23 @@ void _hddid_post_results(string scalar b_name, string scalar V_name,
         if (tc_val[1, 1] > tc_val[1, 2]) {
             errprintf("_hddid_post_results(): final tc must satisfy lower <= upper; got (%g, %g)\n",
                 tc_val[1, 1], tc_val[1, 2])
+            _error(3498)
+        }
+    }
+
+    if (publish_sup & (rows(tc_sup_val) > 0 | cols(tc_sup_val) > 0)) {
+        if (rows(tc_sup_val) != 1 | cols(tc_sup_val) != 2) {
+            errprintf("_hddid_post_results(): final tc_sup must be 1 x 2; got %g x %g\n",
+                rows(tc_sup_val), cols(tc_sup_val))
+            _error(3498)
+        }
+        if (hasmissing(tc_sup_val)) {
+            errprintf("_hddid_post_results(): final tc_sup must be finite; found missing/nonfinite values\n")
+            _error(3498)
+        }
+        if (tc_sup_val[1, 1] > tc_sup_val[1, 2]) {
+            errprintf("_hddid_post_results(): final tc_sup must satisfy lower <= upper; got (%g, %g)\n",
+                tc_sup_val[1, 1], tc_sup_val[1, 2])
             _error(3498)
         }
     }
@@ -4436,6 +4532,59 @@ void _hddid_post_results(string scalar b_name, string scalar V_name,
                 _error(3498)
             }
         }
+        if (publish_sup & rows(CIuniform_sup_val) > 0 & cols(CIuniform_sup_val) > 0) {
+            if (rows(CIuniform_sup_val) != 2 | cols(CIuniform_sup_val) != qq) {
+                errprintf("_hddid_post_results(): final CIuniform_sup must be 2 x qq; got %g x %g with qq=%g\n",
+                    rows(CIuniform_sup_val), cols(CIuniform_sup_val), qq)
+                _error(3498)
+            }
+            if (hasmissing(CIuniform_sup_val)) {
+                errprintf("_hddid_post_results(): final CIuniform_sup must be finite; found missing/nonfinite values\n")
+                _error(3498)
+            }
+            // CIuniform_sup shares the same zero-SE collapse rule.
+            for (j = 1; j <= qq; j++) {
+                if (stdg_val[1, j] == 0) {
+                    if (CIuniform_sup_val[1, j] != gdebias_val[1, j] | ///
+                        CIuniform_sup_val[2, j] != gdebias_val[1, j]) {
+                        errprintf("_hddid_post_results(): zero-SE CIuniform_sup rows must collapse exactly to gdebias; column %g drifts to (%g, %g) around %g\n",
+                            j, CIuniform_sup_val[1, j], CIuniform_sup_val[2, j], gdebias_val[1, j])
+                        _error(3498)
+                    }
+                }
+            }
+            // Enforce tc_sup <-> CIuniform_sup consistency on the aggregate
+            // stdg scale; tolerance logic mirrors the envelope branch above.
+            tc_sup_scale = max((1, max(abs(tc_sup_val))))
+            tc_sup_tol = 1e-12 * tc_sup_scale
+            if (stdg_absmax <= zero_stdg_tol) {
+                if (abs(tc_sup_val[1,1]) > tc_sup_tol | abs(tc_sup_val[1,2]) > tc_sup_tol) {
+                    errprintf("_hddid_post_results(): final tc_sup must equal (0, 0) when final stdg is identically zero\n")
+                    _error(3498)
+                }
+            }
+            else {
+                if (abs(tc_sup_val[1,1]) <= tc_sup_tol & abs(tc_sup_val[1,2]) <= tc_sup_tol) {
+                    errprintf("_hddid_post_results(): final tc_sup must not equal (0, 0) when final stdg is not identically zero\n")
+                    _error(3498)
+                }
+            }
+            if (!hasmissing(tc_sup_val) & !hasmissing(gdebias_val) & !hasmissing(stdg_val)) {
+                ciuniform_sup_oracle = (gdebias_val :+ tc_sup_val[1] * stdg_val) \
+                    (gdebias_val :+ tc_sup_val[2] * stdg_val)
+                ciuniform_sup_gap = max(abs(CIuniform_sup_val :- ciuniform_sup_oracle))
+                ciuniform_sup_scale = max((max(abs(CIuniform_sup_val)), max(abs(ciuniform_sup_oracle))))
+                if (ciuniform_sup_scale <= 0 | ciuniform_sup_scale >= .) {
+                    ciuniform_sup_scale = 1
+                }
+                ciuniform_sup_tol = 1e-12 * ciuniform_sup_scale
+                if (ciuniform_sup_gap > ciuniform_sup_tol) {
+                    errprintf("_hddid_post_results(): final CIuniform_sup is inconsistent with gdebias/stdg/tc_sup; max gap = %g\n",
+                        ciuniform_sup_gap)
+                    _error(3498)
+                }
+            }
+        }
         if (rows(CIpoint_val) != 2) {
             errprintf("_hddid_post_results(): final CIpoint must be 2 x (p + qq); got %g x %g\n",
                 rows(CIpoint_val), cols(CIpoint_val))
@@ -4488,6 +4637,10 @@ void _hddid_post_results(string scalar b_name, string scalar V_name,
     st_matrix(tc_name, tc_val)
     st_matrix(CIpoint_name, CIpoint_val)
     st_matrix(CIuniform_name, CIuniform_val)
+    if (publish_sup) {
+        st_matrix(tc_sup_name, tc_sup_val)
+        st_matrix(CIuniform_sup_name, CIuniform_sup_val)
+    }
 }
 
 // ============================================================
@@ -4864,6 +5017,103 @@ void _hddid_aggregate_gammabar(real scalar K)
     }
     st_matrix("__hddid_final_gammabar", _agg_gammabar)
     st_numscalar("__hddid_final_a0", _agg_a0)
+}
+
+// =============================================================================
+// _hddid_apply_inverse_xord: undo the canonical x-permutation on published
+// parametric results so that the column-stripe attached by
+// _hddid_publish_results (xvars(`x_user')) matches the right coefficients.
+//
+// Background
+// ----------
+// _hddid_estimate canonicalises the user's covariate list once, before any
+// fold-level work, by calling _hddid_canonical_x_order(). The resulting
+// permutation `xord_main' (1 x p) maps canonical position k to the original
+// 1-based index in `x_user': xord_main[1, k] = original_index_at_canonical_k.
+//
+// All internal Stage-2/CLIME/debiasing arithmetic is then carried out in
+// canonical order. The aggregated `_b'/`_xdebias'/`_stdx'/`_V' returned by
+// _hddid_post_results are therefore in canonical order too. Without
+// re-permutation, e(b)/e(xdebias)/e(stdx)/e(V) carry x_user-order column
+// stripes whose labels do not correspond to the underlying coefficients.
+//
+// Action
+// ------
+// For each published parametric matrix, build the inverse permutation
+// inv[j] = canonical position k such that xord_main[1, k] = j, then
+// re-order columns (and rows for V) so the j-th published coordinate is the
+// coefficient for the original x_user variable at index j.
+//
+// This is a pure relabelling step; it does not change e(gdebias)/e(stdg)/
+// e(tc)/CIs because the nonparametric block has no x-indexed coordinate.
+// =============================================================================
+void _hddid_apply_inverse_xord(string scalar b_name, string scalar V_name,
+    string scalar xdebias_name, string scalar stdx_name,
+    string scalar cipoint_name, string scalar xord_name)
+{
+    real matrix xord_mat, b_val, V_val, xd_val, stdx_val, cipoint_val
+    real matrix cipoint_x_block, cipoint_g_block
+    real rowvector inv_perm, keep_cols
+    real scalar p, k, j
+
+    xord_mat = st_matrix(xord_name)
+    if (rows(xord_mat) != 1 | cols(xord_mat) < 1) {
+        errprintf("_hddid_apply_inverse_xord(): xord must be a non-empty 1 x p row vector; got %g x %g\n",
+            rows(xord_mat), cols(xord_mat))
+        _error(3498)
+    }
+    p = cols(xord_mat)
+
+    inv_perm = J(1, p, 0)
+    for (k = 1; k <= p; k++) {
+        j = xord_mat[1, k]
+        if (j < 1 | j > p | j != trunc(j)) {
+            errprintf("_hddid_apply_inverse_xord(): xord entry at canonical position %g is %g, must be an integer in [1, p]\n",
+                k, j)
+            _error(3498)
+        }
+        if (inv_perm[j] != 0) {
+            errprintf("_hddid_apply_inverse_xord(): xord is not a permutation; original index %g appears at canonical positions %g and %g\n",
+                j, inv_perm[j], k)
+            _error(3498)
+        }
+        inv_perm[j] = k
+    }
+
+    b_val = st_matrix(b_name)
+    xd_val = st_matrix(xdebias_name)
+    stdx_val = st_matrix(stdx_name)
+    V_val = st_matrix(V_name)
+
+    if (cols(b_val) == p & rows(b_val) >= 1) {
+        st_matrix(b_name, b_val[, inv_perm])
+    }
+    if (cols(xd_val) == p & rows(xd_val) >= 1) {
+        st_matrix(xdebias_name, xd_val[, inv_perm])
+    }
+    if (cols(stdx_val) == p & rows(stdx_val) >= 1) {
+        st_matrix(stdx_name, stdx_val[, inv_perm])
+    }
+    if (rows(V_val) == p & cols(V_val) == p) {
+        st_matrix(V_name, V_val[inv_perm, inv_perm])
+    }
+
+    // CIpoint layout is 2 x (p + qq): first p columns carry the pointwise x
+    // intervals, trailing columns carry g(z0) intervals. Re-permute the x
+    // block only; leave the g(z0) block untouched.
+    cipoint_val = st_matrix(cipoint_name)
+    if (rows(cipoint_val) == 2 & cols(cipoint_val) >= p) {
+        cipoint_x_block = cipoint_val[, (1..p)]
+        cipoint_x_block = cipoint_x_block[, inv_perm]
+        if (cols(cipoint_val) > p) {
+            keep_cols = (p + 1)..cols(cipoint_val)
+            cipoint_g_block = cipoint_val[, keep_cols]
+            st_matrix(cipoint_name, (cipoint_x_block, cipoint_g_block))
+        }
+        else {
+            st_matrix(cipoint_name, cipoint_x_block)
+        }
+    }
 }
 
 end

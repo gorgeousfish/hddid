@@ -298,7 +298,7 @@ if _rc == 0 {
 // _hddid_main.ado also publishes a large helper-program surface. The example
 // must not leave those helper definitions behind in the caller namespace after
 // it temporarily loads the authoritative bundle.
-local hxe_internal_main_helpers "_hddid_probe_pkgdir_from_context _hddid_canonical_pkgdir _hddid_resolve_pkgdir _hddid_uncache_scipy _hddid_uncache_numpy _hddid_clime_scipy_probe _hddid_clime_feas_ok _hddid_probe_fail_classify _hddid_cvlasso_pick_lambda _hddid_run_rng_isolated _hddid_resolve_prop_cv _hddid_count_split_groups _hddid_choose_outer_split_sample _hddid_default_outer_fold_map _hddid_sort_default_innercv _hddid_canonicalize_xvars _hddid_parse_methodopt _hddid_parse_estopt_core _hddid_parse_estopt_sbridge _hddid_parse_estopt_rbridge _hddid_parse_estopt _hddid_parse_precomma_estexpr _hddid_show_estopt _hddid_show_invalid_estopt _hddid_show_esttoken _hddid_trailing_esttoken _hddid_load_estimate_sidecar _hddid_load_display_sidecar _hddid_validate_predict_stub _hddid_validate_estat_stub _hddid_publish_results _hddid_cleanup_state"
+local hxe_internal_main_helpers "_hddid_probe_pkgdir_from_context _hddid_canonical_pkgdir _hddid_resolve_pkgdir _hddid_uncache_scipy _hddid_uncache_numpy _hddid_clime_scipy_probe _hddid_clime_feas_ok _hddid_probe_fail_classify _hddid_run_rng_isolated _hddid_count_split_groups _hddid_choose_outer_split_sample _hddid_default_outer_fold_map _hddid_sort_default_innercv _hddid_canonicalize_xvars _hddid_parse_methodopt _hddid_parse_estopt_core _hddid_parse_estopt_sbridge _hddid_parse_estopt_rbridge _hddid_parse_estopt _hddid_parse_precomma_estexpr _hddid_show_estopt _hddid_show_invalid_estopt _hddid_show_esttoken _hddid_trailing_esttoken _hddid_load_estimate_sidecar _hddid_load_display_sidecar _hddid_validate_predict_stub _hddid_validate_estat_stub _hddid_publish_results _hddid_cleanup_state"
 local hxe_main_helper_n 0
 foreach hxe_main_helper_cmd of local hxe_internal_main_helpers {
     local ++hxe_main_helper_n
@@ -731,9 +731,9 @@ unab x_vars : x*
 // Run hddid estimation
 // Paper-aligned trigonometric basis with q(16) (8 harmonic pairs / 8th degree
 // under the package's q() indexing), 3-fold cross-fitting, 90% CI, 1000
-// bootstrap reps. Pin an explicit z0() grid so the reported omitted-intercept z-varying block keeps
-// the same estimand dimension across runs instead of inheriting every retained
-// unique z value from the realized sample.
+// bootstrap reps. Pin an explicit z0() grid so the reported nonparametric
+// block keeps the same estimand dimension across runs instead of inheriting
+// every retained unique z value from the realized sample.
 // Use that shipped five-point z0() grid only when it lies inside the current retained z support; otherwise choose an in-support z0() list or omit z0() so hddid uses the retained support points directly.
 // That five-point z0() list is this package walkthrough's audit grid rather than a paper-fixed evaluation set.
 // Under method("Tri"), keep that explicit z0() grid inside the current retained z support.
@@ -770,22 +770,19 @@ di as text "DGP1 runtime: " %9.3f `hddid_example_elapsed_dgp1' " seconds"
 //   A good estimate of x1 should be close to 1.0
 //   A good estimate of x2 should be close to 0.5
 //
-// gdebias: public debiased z-varying block on the posted z0() grid
-//   gdebias excludes the separate stage-2 intercept a0, so it is not the
-//   full level f(z0) surface and should not be compared with exp(z0) in levels
-//   Use centered shape diagnostics instead: compare
-//   (gdebias(z0_j) - gdebias(z0_ref)) with (exp(z0_j) - exp(z0_ref))
+// gdebias: debiased nonparametric estimate on the posted z0() grid.
+//   gdebias excludes the stage-2 intercept; the full level at z0 is
+//   e(a0) + e(gdebias), which can be compared directly with the DGP1 truth
+//   f(z) = exp(z).
 //
 // stdx: standard errors for each beta_j
 //   Smaller SE = more precise estimate
 //
 // CIpoint: pointwise confidence intervals for both the beta block and the
-//   omitted-intercept nonparametric block
+//   centered nonparametric block
 //   Columns 1..p cover the parametric beta_j entries and columns p+1..(p+qq)
-//   cover that posted z-varying block on the z0 grid
-//   The beta-side interval is checked against beta_j truth, while the trailing
-//   nonparametric block only supports centered shape checks because hddid does
-//   not publish e(a0)
+//   cover the centered f(z0) - e(a0) block on the z0 grid; add e(a0) to the
+//   lower/upper endpoints to recover level-scale pointwise intervals
 //
 // tc: Lower/upper bootstrap critical-value pair for the published nonparametric interval object
 //   The package calibrates e(tc) from rowwise Gaussian-bootstrap quantiles of
@@ -825,28 +822,27 @@ di as text ""
 di as text "--- DGP1 posted z0() grid ---"
 matrix list e(z0), format(%9.4f)
 di as text ""
-di as text "--- DGP1 omitted-intercept gdebias block (all explicit z0 points) ---"
-di as text "      z0   gdebias      SE      CI_lo      CI_hi   centered_gdebias centered_true"
+di as text "--- DGP1 nonparametric f(z0) block (all explicit z0 points) ---"
+di as text "      z0      f_hat        SE      CI_lo      CI_hi     exp(z0)   |diff|"
 local qq = colsof(e(gdebias))
 local p = colsof(e(b))
-local z0_ref = el(e(z0), 1, 1)
-local gd_ref = el(e(gdebias), 1, 1)
+local a0 = e(a0)
+local max_level_gap = 0
 forvalues j = 1/`qq' {
     local ci_idx = `p' + `j'
     local z0_j = el(e(z0), 1, `j')
     local gd_j = el(e(gdebias), 1, `j')
     local sg_j = el(e(stdg), 1, `j')
-    local ci_lo_j = el(e(CIpoint), 1, `ci_idx')
-    local ci_hi_j = el(e(CIpoint), 2, `ci_idx')
-    local centered_hat_j = `gd_j' - `gd_ref'
-    // centered shape diagnostics: compare exp(z0_j) - exp(z0_ref)
-    local centered_true_j = exp(`z0_j') - exp(`z0_ref')
-    di as text %8.3f `z0_j' " " %10.4f `gd_j' " " %10.4f `sg_j' " " %10.4f `ci_lo_j' " " %10.4f `ci_hi_j' " " %10.4f `centered_hat_j' " " %10.4f `centered_true_j'
+    local ci_lo_j = el(e(CIpoint), 1, `ci_idx') + `a0'
+    local ci_hi_j = el(e(CIpoint), 2, `ci_idx') + `a0'
+    local fhat_j  = `gd_j' + `a0'
+    local ftrue_j = exp(`z0_j')
+    local diff_j  = abs(`fhat_j' - `ftrue_j')
+    if `diff_j' > `max_level_gap' local max_level_gap = `diff_j'
+    di as text %8.3f `z0_j' " " %10.4f `fhat_j' " " %10.4f `sg_j' " " %10.4f `ci_lo_j' " " %10.4f `ci_hi_j' " " %10.4f `ftrue_j' " " %8.4f `diff_j'
 }
 
-// The same DGP1 public matrix surface is still enough for the beta_1 paper
-// truth check and for centered-shape diagnostics on the omitted-intercept
-// nonparametric block.
+// Truth checks: beta_1 = 1 and the DGP1 level oracle f(z) = exp(z).
 di as text ""
 di as text "--- DGP1 hypothesis test: beta_1 = 1 ---"
 local beta1 = el(e(xdebias), 1, 1)
@@ -857,37 +853,16 @@ di as text "  SE:              " %9.4f `se1'
 di as text "  t-stat (H0: beta_1=1): " %6.3f `tstat'
 di as text "  p-value (two-sided):   " %6.4f 2*normal(-abs(`tstat'))
 
-// CIpoint/CIuniform still describe the posted omitted-intercept nonparametric
-// block, but because hddid does not publish e(a0) they cannot be checked
-// against the full exp(z0) level surface in this public walkthrough.
 di as text ""
-di as text "--- DGP1 centered shape diagnostics ---"
+di as text "--- DGP1 level truth check: f(z0) vs exp(z0) ---"
 local beta1_ci_lo = el(e(CIpoint), 1, 1)
 local beta1_ci_hi = el(e(CIpoint), 2, 1)
 di as text "DGP1 beta_1 CIpoint contains 1: " ///
     cond(1 >= `beta1_ci_lo' & 1 <= `beta1_ci_hi', "yes", "no") ///
     "  [" %9.4f `beta1_ci_lo' ", " %9.4f `beta1_ci_hi' "]"
-local max_shape_gap = 0
-forvalues j = 1/`qq' {
-    local z0_j = el(e(z0), 1, `j')
-    local centered_hat_j = el(e(gdebias), 1, `j') - `gd_ref'
-    local centered_true_j = exp(`z0_j') - exp(`z0_ref')
-    local shape_gap_j = abs(`centered_hat_j' - `centered_true_j')
-    if `shape_gap_j' > `max_shape_gap' {
-        local max_shape_gap = `shape_gap_j'
-    }
-}
-di as text "DGP1 centered shape diagnostics anchor at z0_ref = " %9.4f `z0_ref'
-di as text "Because gdebias excludes the separate stage-2 intercept a0, compare centered differences only."
-di as text "Max |(gdebias-gdebias_ref) - (exp(z0)-exp(z0_ref))| = " %9.4f `max_shape_gap'
-di as text "CIpoint/CIuniform remain interval objects for the omitted-intercept block, so this walkthrough does not compare them to exp(z0) levels."
-// Retired tokens kept for audit traceability only:
-//   older DGP1 pointwise-share and interval-share displays
-//   --- DGP1 CIpoint pointwise diagnostics ---
-//   DGP1 CIpoint pointwise within-run inclusion share:
-//   This DGP1 CIpoint check is pointwise. The DGP1 CIuniform object is only the package's finite-grid interval object; it is not a calibrated simultaneous-coverage guarantee.
-di as text "Retired shorthand from older walkthroughs contrasted CIpoint against CIuniform in one sentence. Read that superseded shorthand only as a reminder that CIpoint is pointwise; the current contract is the corrected finite-grid interval-object statement above."
-//   DGP1 CIuniform interval-object within-run inclusion share:
+di as text "DGP1 stage-2 intercept e(a0) = " %9.4f `a0'
+di as text "Max |e(a0) + e(gdebias) - exp(z0)| across the posted grid = " %9.4f `max_level_gap'
+di as text "CIpoint trailing columns are centered (intercept-omitted); add e(a0) to recover level-scale endpoints."
 
 // =============================================================================
 // Part 2: DGP2 — Paper baseline design with correlated covariates and heteroskedastic baseline
@@ -927,9 +902,9 @@ di as text "=============================================="
 // so any finite rho() value then generates the same
 // one-covariate draw; rho() only changes the public DGP2 surface once p()>1.
 // for p()>1 the boundary choices rho(-1) and rho(1) are singular AR(1) limits, so this public example keeps rho(0.5) on its shipped interior path.
-// As in DGP1, the full heterogeneous ATT target at a test point contains a
-// separate stage-2 intercept a0. The later public gdebias readout isolates only
-// the omitted-intercept z-varying block.
+// As in DGP1, the full heterogeneous ATT target at a test point is
+// x0'beta + e(a0) + f(z0); the public gdebias readout below is the centered
+// nonparametric block and the level f(z0) is recovered as e(a0) + e(gdebias).
 // As with DGP1, changing this call to p()<10 or p()<15 truncates the paper's
 // nonzero theta0 and beta^1/beta^0 sequences at p(), so small-p runs are a
 // lower-dimensional truncation of the paper surface, not the same oracle with
@@ -950,9 +925,8 @@ unab x_vars : x*
 // Run hddid estimation with the paper's 8th-degree Tri basis, which maps to
 // q(16) under the package's q/2 harmonic indexing. Inline the same explicit
 // z0() grid used in Part 1 so this public DGP2 block stays runnable on its
-// own while keeping the posted omitted-intercept z-varying block aligned to
-// the same audit points used for centered shape diagnostics across the two
-// shipped DGP walkthroughs.
+// own while keeping the posted evaluation grid aligned with the DGP1 audit
+// points.
 // Use that shipped five-point z0() grid only when it lies inside the current retained z support; otherwise choose an in-support z0() list or omit z0() so hddid uses the retained support points directly.
 // That five-point z0() list is this package walkthrough's audit grid rather than a paper-fixed evaluation set.
 // Under method("Tri"), keep that explicit z0() grid inside the current retained z support.
@@ -990,59 +964,54 @@ forvalues j = 1/10 {
 }
 
 // --- Interpreting nonparametric output ---
-// gdebias: public debiased z-varying block at each evaluation point
-//   gdebias excludes the separate stage-2 intercept a0, so it is not the full
-//   level f(z0) object and should not be compared with exp(z0) in levels
-//   Use centered shape diagnostics instead: compare
-//   (gdebias(z0_j) - gdebias(z0_ref)) with (exp(z0_j) - exp(z0_ref))
+// gdebias: debiased nonparametric estimate at each evaluation point.
+//   gdebias excludes the stage-2 intercept; the full level at z0 is
+//   e(a0) + e(gdebias), which can be compared directly with the DGP2 truth
+//   f(z) = exp(z).
 //
 // CIpoint: pointwise confidence intervals for both the beta block and the
-//   omitted-intercept nonparametric block
+//   centered nonparametric block.
 //   Columns 1..p cover the parametric beta_j entries and columns p+1..(p+qq)
-//   cover that posted z-varying block on the z0 grid
-//   These are nominal 90% pointwise intervals: under repeated sampling they target 90% coverage at each fixed coordinate
-//   A single walkthrough run need not realize exact 90% inclusion at every reported coordinate
-//   Across repeated samples, these pointwise intervals do not by themselves
-//   define a calibrated simultaneous statement over the full z0 grid
+//   cover the centered f(z0) - e(a0) block on the z0 grid; add e(a0) to the
+//   lower/upper endpoints to recover level-scale pointwise intervals.
+//   These are nominal 90% pointwise intervals: under repeated sampling they
+//   target 90% coverage at each fixed coordinate. A single walkthrough run
+//   need not realize exact 90% inclusion at every reported coordinate.
 //
-// CIuniform: 2 x qq nonparametric interval object
-//   lower row is gdebias + tc[1] * stdg and the upper row is
-//   gdebias + tc[2] * stdg, with columns aligned to z0
-//   Relative to the pointwise intervals, this published lower/upper interval object reuses one
-//   rowwise-envelope lower/upper studentized-process pair across the full z0
-//   grid; after multiplying by stdg, the outcome-scale width still varies
-//   pointwise with the stored standard-error surface
-//   Use CIuniform as the package's published nonparametric interval object for the omitted-intercept block only
-//
-// In one run, CIuniform is still only a descriptive finite-grid interval object; it is not a calibrated simultaneous-coverage statement, and its public surface omits a0 just like gdebias.
+// CIuniform: 2 x qq bootstrap-calibrated interval object for the centered
+//   nonparametric block. Lower row = gdebias + tc[1]*stdg and upper row =
+//   gdebias + tc[2]*stdg, with columns aligned to z0. Add e(a0) row-wise to
+//   shift CIuniform onto the level scale. This is a descriptive finite-grid
+//   interval object, not a calibrated simultaneous-coverage guarantee.
 
 // Display the full explicit z0() grid used in this shipped DGP2/Tri Part 2 run.
 di as text ""
 di as text "--- DGP2 posted z0() grid ---"
 matrix list e(z0), format(%9.4f)
 di as text ""
-di as text "--- DGP2 omitted-intercept gdebias block (all explicit z0 points) ---"
-di as text "      z0   gdebias      SE      CI_lo      CI_hi   centered_gdebias centered_true"
+di as text "--- DGP2 nonparametric f(z0) block (all explicit z0 points) ---"
+di as text "      z0      f_hat        SE      CI_lo      CI_hi     exp(z0)   |diff|"
 local qq = colsof(e(gdebias))
 local p = colsof(e(b))
-local z0_ref = el(e(z0), 1, 1)
-local gd_ref = el(e(gdebias), 1, 1)
+local a0 = e(a0)
+local max_level_gap = 0
 forvalues j = 1/`qq' {
     local ci_idx = `p' + `j'
     local z0_j = el(e(z0), 1, `j')
     local gd_j = el(e(gdebias), 1, `j')
     local sg_j = el(e(stdg), 1, `j')
-    local ci_lo_j = el(e(CIpoint), 1, `ci_idx')
-    local ci_hi_j = el(e(CIpoint), 2, `ci_idx')
-    local centered_hat_j = `gd_j' - `gd_ref'
-    // centered shape diagnostics: compare exp(z0_j) - exp(z0_ref)
-    local centered_true_j = exp(`z0_j') - exp(`z0_ref')
-    di as text %8.3f `z0_j' " " %10.4f `gd_j' " " %10.4f `sg_j' " " %10.4f `ci_lo_j' " " %10.4f `ci_hi_j' " " %10.4f `centered_hat_j' " " %10.4f `centered_true_j'
+    local ci_lo_j = el(e(CIpoint), 1, `ci_idx') + `a0'
+    local ci_hi_j = el(e(CIpoint), 2, `ci_idx') + `a0'
+    local fhat_j  = `gd_j' + `a0'
+    local ftrue_j = exp(`z0_j')
+    local diff_j  = abs(`fhat_j' - `ftrue_j')
+    if `diff_j' > `max_level_gap' local max_level_gap = `diff_j'
+    di as text %8.3f `z0_j' " " %10.4f `fhat_j' " " %10.4f `sg_j' " " %10.4f `ci_lo_j' " " %10.4f `ci_hi_j' " " %10.4f `ftrue_j' " " %8.4f `diff_j'
 }
 
-// DGP2 changes the X covariance and the baseline-outcome law, but the public
-// beta_1 truth check and centered-shape diagnostics still remain available on
-// the omitted-intercept nonparametric block.
+// DGP2 changes the X covariance and the baseline-outcome law, but the beta_1
+// parametric truth and the nonparametric level truth f(z) = exp(z) remain the
+// same as DGP1.
 di as text ""
 di as text "--- DGP2 hypothesis test: beta_1 = 1 ---"
 local beta1 = el(e(xdebias), 1, 1)
@@ -1054,32 +1023,14 @@ di "  t-stat (H0: beta_1=1): " %6.3f `tstat'
 di "  p-value (two-sided):  " %6.4f 2*normal(-abs(`tstat'))
 
 di as text ""
-di as text "--- DGP2 centered shape diagnostics ---"
+di as text "--- DGP2 level truth check: f(z0) vs exp(z0) ---"
 local beta1_ci_lo = el(e(CIpoint), 1, 1)
 local beta1_ci_hi = el(e(CIpoint), 2, 1)
 di "DGP2 beta_1 CIpoint contains 1: " cond(1 >= `beta1_ci_lo' & 1 <= `beta1_ci_hi', "yes", "no") ///
     "  [" %9.4f `beta1_ci_lo' ", " %9.4f `beta1_ci_hi' "]"
-local max_shape_gap = 0
-forvalues j = 1/`qq' {
-    local z0_j = el(e(z0), 1, `j')
-    local centered_hat_j = el(e(gdebias), 1, `j') - `gd_ref'
-    local centered_true_j = exp(`z0_j') - exp(`z0_ref')
-    local shape_gap_j = abs(`centered_hat_j' - `centered_true_j')
-    if `shape_gap_j' > `max_shape_gap' {
-        local max_shape_gap = `shape_gap_j'
-    }
-}
-di as text "DGP2 centered shape diagnostics anchor at z0_ref = " %9.4f `z0_ref'
-di as text "Because gdebias excludes the separate stage-2 intercept a0, compare centered differences only."
-di as text "Max |(gdebias-gdebias_ref) - (exp(z0)-exp(z0_ref))| = " %9.4f `max_shape_gap'
-di as text "Retired shorthand from older walkthroughs contrasted CIpoint against CIuniform in one sentence. Read that superseded shorthand only as a reminder that CIpoint is pointwise; the current contract is the corrected omitted-intercept finite-grid interval-object statement above."
-di as text "CIpoint/CIuniform remain interval objects for the omitted-intercept block, so this walkthrough does not compare them to exp(z0) levels."
-// Retired tokens kept for audit traceability only:
-//   older DGP2 pointwise-share and interval-share displays
-//   --- DGP2 CIpoint pointwise diagnostics ---
-//   DGP2 CIpoint pointwise within-run inclusion share:
-//   This DGP2 CIpoint check is pointwise. The DGP2 CIuniform object is only the package's finite-grid interval object; it is not a calibrated simultaneous-coverage guarantee.
-//   DGP2 CIuniform interval-object within-run inclusion share:
+di as text "DGP2 stage-2 intercept e(a0) = " %9.4f `a0'
+di as text "Max |e(a0) + e(gdebias) - exp(z0)| across the posted grid = " %9.4f `max_level_gap'
+di as text "CIpoint trailing columns are centered (intercept-omitted); add e(a0) to recover level-scale endpoints."
 
 // =============================================================================
 // Part 3: Method Comparison — Polynomial vs Trigonometric Basis
@@ -1097,14 +1048,14 @@ di as text "=============================================="
 // bootstrap draws, and CLIME CV splits stay aligned; the remaining
 // difference is then the sieve basis family itself.
 // Because this Part 3 demo omits z0(), the Pol and Tri runs need not post
-// gdebias/CIuniform on the same default retained-sample z grid. To compare the
-// nonparametric omitted-intercept z-varying block across basis families, rerun both commands with
-// the same explicit z0() list.
+// gdebias/CIuniform on the same default retained-sample z grid. To compare
+// the nonparametric block across basis families, rerun both commands with the
+// same explicit z0() list.
 di as text "  Note: this is a same-input-q demonstration, not a matched-degree basis comparison."
 di as text "        Pol q(8) keeps an 8th-degree polynomial basis, while Tri q(8) is only a 4th degree trigonometric basis."
 di as text "  Note: Part 3 omits z0(), so the Pol/Tri runs need not share the same default retained-sample z grid."
 di as text "        Keep seed(42) in both runs so folds/bootstrap/CLIME randomness stays aligned and the comparison isolates the basis family."
-di as text "        To compare the nonparametric omitted-intercept z-varying block across basis families, rerun both commands with the same explicit z0() list."
+di as text "        To compare the nonparametric block across basis families, rerun both commands with the same explicit z0() list."
 
 // Use same DGP1 data as Part 1 for fair comparison
 hddid_dgp1, n(500) p(50) seed(12345) clear
@@ -1153,19 +1104,17 @@ di as text " Part 4: Stored Results Access"
 di as text "=============================================="
 // The e() results below come from the immediately preceding Part 3 Tri q(8)
 // demo run, not the earlier paper-baseline q(16) runs.
-// Because the Part 3 Tri q(8) demo omits z0(), the current e(z0) grid, the aligned gdebias/stdg/CIuniform results, and the trailing omitted-intercept CIpoint block now come from the retained sample's
-// default z support rather than the earlier explicit
-// z0(-1 -0.5 0 0.5 1) paper-baseline grid.
+// Because the Part 3 Tri q(8) demo omits z0(), the current e(z0) grid, the
+// aligned gdebias/stdg/CIuniform results, and the trailing nonparametric
+// block of e(CIpoint) now come from the retained sample's default z support
+// rather than the earlier explicit z0(-1 -0.5 0 0.5 1) paper-baseline grid.
 // Read e(q) together with e(method): under the package's Tri q()/2 harmonic indexing,
 // the active Tri q(8) surface therefore means a 4th degree trigonometric basis
 // rather than the paper-baseline 8th-degree Tri q(16) surface used earlier in
 // Parts 1 and 2.
-// e(qq) is the shared qq = length(z0) contract: it is the
-// width of the current e(z0), gdebias, stdg, and CIuniform omitted-intercept z-varying surfaces,
-// and of the trailing omitted-intercept z-varying block in e(CIpoint).
-// Retired exact-token traceability only: width of the current e(z0), gdebias, stdg, and CIuniform f(z0) surfaces
-// Current contract: those width-aligned public objects are the omitted-intercept
-// z-varying surfaces plus the trailing omitted-intercept z-varying block in e(CIpoint).
+// e(qq) is the shared qq = length(z0) contract: it is the width of the
+// current e(z0), e(gdebias), e(stdg), e(CIuniform), and of the trailing
+// nonparametric block in e(CIpoint).
 
 // --- Scalar results ---
 di as text ""
@@ -1304,7 +1253,8 @@ matrix list e(V), format(%9.4f)
 // diag(e(V)) = e(stdx)^2 on the active result surface.
 matrix list e(z0), format(%9.4f)
 // e(z0) is the shared posted evaluation grid: read e(gdebias), e(stdg),
-// e(CIuniform), and the trailing omitted-intercept z-varying block of e(CIpoint) in this same order.
+// e(CIuniform), and the trailing nonparametric block of e(CIpoint) in this
+// same order.
 matrix list e(gdebias), format(%9.4f)
 matrix list e(stdg), format(%9.4f)
 matrix list e(CIpoint), format(%9.4f)
@@ -1314,15 +1264,13 @@ matrix list e(CIuniform), format(%9.4f)
 // Legacy replay/direct unsupported postestimation can still use the published e(CIuniform) object when e(tc) is absent; current replay/direct unsupported postestimation instead require e(tc) on current saved-results surfaces and fail closed before ancillary provenance reconciliation.
 // When e(tc) is stored, current replay/direct unsupported postestimation validate that provenance against the published e(CIuniform) object.
 // Current direct unsupported postestimation still fails closed when a current saved-results surface drops malformed e(CIuniform) or e(CIpoint) before ancillary seed()/alpha()/nboot() cmdline provenance checks.
-// Retired exact-token audit traceability only: Current replay/direct unsupported postestimation can still use the published e(CIuniform) object when e(tc) is absent; what is lost is only the duplicate bootstrap critical-value provenance.
-// Retired exact-token audit traceability only: When e(tc) is stored, the same replay/direct unsupported path also validates that provenance against the published e(CIuniform) object.
 // Replay reads e(CIpoint), e(tc), e(stdg), and e(CIuniform) directly from the stored inference surface.
 // On those same current saved-results surfaces, malformed e(tc) fails on that same inference-surface branch because e(tc) is the bootstrap-calibration provenance behind e(CIuniform).
 // In short: malformed e(tc), e(CIuniform), or e(CIpoint) are all current inference-surface failures before ancillary cmdline provenance checks.
-// e(CIpoint) stacks the pointwise beta block in its first e(p) columns and the
-// pointwise omitted-intercept z-varying block in its remaining e(qq) columns aligned with the
-// current e(z0) grid, while the published nonparametric interval object
-// e(CIuniform) stays aligned on that same e(z0) grid.
+// e(CIpoint) stacks the pointwise beta block in its first e(p) columns and
+// the pointwise centered nonparametric block in its remaining e(qq) columns
+// aligned with the current e(z0) grid, while e(CIuniform) stays aligned on
+// that same e(z0) grid.
 // Changing nboot() only recalibrates e(tc)/e(CIuniform); the saved e(CIpoint), e(stdx), and e(stdg) surfaces remain the analytic pointwise objects.
 // lower row = e(gdebias) + e(tc)[1,1] * e(stdg) and
 // upper row = e(gdebias) + e(tc)[1,2] * e(stdg).
@@ -1339,35 +1287,33 @@ matrix list e(clime_nfolds_cv_per_fold)
 
 // --- Using results in subsequent analysis ---
 di as text ""
-di as text "--- Separate beta contribution from centered z-varying change ---"
+di as text "--- Reconstruct the full ATT at a test point ---"
 
-// The paper's conditional ATT target is x0'beta + f(z0). The public surface
-// does not currently post e(a0), so x0'beta + e(gdebias) is not the full ATT
-// level. Public follow-up analysis should therefore keep the beta contribution
-// and the centered omitted-intercept z-varying block separate.
+// The paper's conditional ATT target is x0'beta + f(z0), and the package
+// publishes both the beta block e(b)/e(xdebias) and the stage-2 intercept
+// e(a0) plus the centered nonparametric surface e(gdebias). The full ATT at
+// x0 and z0 is therefore att_hat = x0'e(b) + e(a0) + gdebias(z0).
 di as text "Published beta coordinate order e(xvars): `e(xvars)'"
 // Build any x0 rowvector in the published e(xvars) order before using the posted beta block.
 matrix x0 = J(1, colsof(e(b)), 0)
 matrix x0[1, 1] = 1
 matrix att_beta = x0 * e(b)'
-local z0_1 = el(e(z0), 1, 1)
-local z0_ref = el(e(z0), 1, 1)
-local gd_ref = el(e(gdebias), 1, 1)
-di as text "Public ATT note: hddid does not currently publish e(a0), so the posted public objects do not identify the full ATT level at z0."
-di as text "beta-only contribution at x0: " %9.4f el(att_beta, 1, 1)
-di as text "Centered omitted-intercept anchor at z0_ref (equals 0 by construction): " %9.4f (el(e(gdebias), 1, 1) - `gd_ref')
-// Retired traceability note only: older walkthroughs sometimes wrote the missing-a0 sum as a one-shot ATT level, but that shorthand is not a valid public reconstruction because e(gdebias) omits a0.
+local a0 = e(a0)
+local z0_1  = el(e(z0), 1, 1)
+local gd_1  = el(e(gdebias), 1, 1)
+local att_1 = el(att_beta, 1, 1) + `a0' + `gd_1'
+di as text "beta-only contribution at x0:          " %9.4f el(att_beta, 1, 1)
+di as text "Stage-2 intercept e(a0):               " %9.4f `a0'
+di as text "Centered f(z0[1]) = gdebias[1]:        " %9.4f `gd_1'
+di as text "Full ATT at (x0, z0[1]) = x0'b + a0 + gdebias: " %9.4f `att_1'
 
 di as text ""
-di as text "--- Centered shape diagnostics ---"
+di as text "--- Level truth check: e(a0) + e(gdebias) vs exp(z0) ---"
 
 // Theorems 2 and 3 in the paper give separate pointwise (1-alpha) intervals
-// for the beta block and the omitted-intercept z-varying block, and the
-// cross-fit R reference publishes those coordinates together in CIpoint. The
-// beta-side truth check reads the first column directly, while the
-// nonparametric public block excludes a0 and therefore only supports centered
-// shape diagnostics rather than level-truth interval checks.
-// Retired anchor for prior contract tests: --- CIpoint pointwise diagnostics ---
+// for the beta block and the nonparametric block. The beta-side truth check
+// reads the first column of e(CIpoint) directly; level-scale comparisons of
+// the nonparametric block are done after adding e(a0) to e(gdebias).
 local beta1_ci_lo = el(e(CIpoint), 1, 1)
 local beta1_ci_hi = el(e(CIpoint), 2, 1)
 di "  beta_1 CIpoint contains 1: " cond(1 >= `beta1_ci_lo' & 1 <= `beta1_ci_hi', "yes", "no") ///
@@ -1375,27 +1321,15 @@ di "  beta_1 CIpoint contains 1: " cond(1 >= `beta1_ci_lo' & 1 <= `beta1_ci_hi',
 
 local qq = colsof(e(z0))
 local p = colsof(e(b))
-local z0_ref = el(e(z0), 1, 1)
-local gd_ref = el(e(gdebias), 1, 1)
-local max_shape_gap = 0
+local max_level_gap = 0
 forvalues j = 1/`qq' {
-    local z0_j = el(e(z0), 1, `j')
-    local centered_hat_j = el(e(gdebias), 1, `j') - `gd_ref'
-    local centered_true_j = exp(`z0_j') - exp(`z0_ref')
-    local shape_gap_j = abs(`centered_hat_j' - `centered_true_j')
-    if `shape_gap_j' > `max_shape_gap' {
-        local max_shape_gap = `shape_gap_j'
-    }
+    local z0_j   = el(e(z0), 1, `j')
+    local fhat_j = el(e(gdebias), 1, `j') + `a0'
+    local diff_j = abs(`fhat_j' - exp(`z0_j'))
+    if `diff_j' > `max_level_gap' local max_level_gap = `diff_j'
 }
-di as text "Centered shape diagnostics anchor at z0_ref = " %9.4f `z0_ref'
-di as text "Because gdebias excludes the separate stage-2 intercept a0, compare centered differences only."
-di as text "Max |(gdebias-gdebias_ref) - (exp(z0)-exp(z0_ref))| = " %9.4f `max_shape_gap'
-di as text "CIpoint/CIuniform remain interval objects for the omitted-intercept block, so this walkthrough does not compare them to exp(z0) levels."
-// Retired Part 4 CIpoint tokens kept for audit traceability only:
-//   older Part 4 pointwise-share and interval-share displays
-//   --- CIpoint pointwise diagnostics ---
-//   CIpoint pointwise within-run inclusion share:
-//   Those CIpoint checks are pointwise. The published CIuniform object remains only the package's finite-grid interval object and is not a calibrated simultaneous-coverage guarantee.
+di as text "Stage-2 intercept e(a0) = " %9.4f `a0'
+di as text "Max |e(a0) + e(gdebias) - exp(z0)| across e(z0) = " %9.4f `max_level_gap'
 
 di as text ""
 di as text "--- Hypothesis test: beta_1 = 1 ---"
@@ -1408,7 +1342,22 @@ di "  beta_1 estimate: " %9.4f `beta1'
 di "  SE:             " %9.4f `se1'
 di "  t-stat (H0: beta_1=1): " %6.3f `tstat'
 di "  p-value (two-sided):  " %6.4f 2*normal(-abs(`tstat'))
-di as text "Retired shorthand from older walkthroughs contrasted CIpoint against CIuniform in one sentence. Read that superseded shorthand only as a reminder that CIpoint is pointwise; the current contract is the corrected finite-grid interval-object statement above."
+
+di as text ""
+di as text "--- Observation-level prediction with predict ---"
+
+// predict newvar produces observation-level fitted values from the stored
+// e(b)/e(a0)/e(gammabar) surface. tau is the default (full CATT); xb and fz
+// return the parametric and nonparametric components separately so
+// tau = xb + fz holds to floating-point precision.
+capture drop hddid_example_tau hddid_example_xb hddid_example_fz hddid_example_gap
+predict double hddid_example_tau
+predict double hddid_example_xb, xb
+predict double hddid_example_fz, fz
+generate double hddid_example_gap = hddid_example_tau - hddid_example_xb - hddid_example_fz
+summarize hddid_example_tau hddid_example_xb hddid_example_fz
+summarize hddid_example_gap
+drop hddid_example_tau hddid_example_xb hddid_example_fz hddid_example_gap
 
 // =============================================================================
 // Part 5: Common Errors and Diagnostics
@@ -1601,33 +1550,45 @@ di as text "Return code: " _rc " (expected: 198)"
 // the command uses the fold-external sample mean as the first-stage outcome nuisance prediction
 // instead of forcing the fixed 5-fold outcome cvlasso path on that arm.
 
-// --- Error 6: unsupported postestimation entrypoints ---
+// --- Error 6: supported predict vs unsupported estat / margins ---
 di as text ""
-di as text "--- Error demo: unsupported postestimation entrypoints ---"
-capture noisily predict, xb
-di as text "predict rc: " _rc " (unsupported observation-level contract)"
+di as text "--- Postestimation entrypoints ---"
+di as text ""
+di as text "predict newvar [, xb|fz|tau] is supported:"
+capture drop hddid_example_p_tau hddid_example_p_xb hddid_example_p_fz
+capture noisily predict double hddid_example_p_tau
+di as text "  predict (tau) rc: " _rc " (expected 0)"
+capture noisily predict double hddid_example_p_xb, xb
+di as text "  predict, xb   rc: " _rc " (expected 0)"
+capture noisily predict double hddid_example_p_fz, fz
+di as text "  predict, fz   rc: " _rc " (expected 0)"
+drop hddid_example_p_tau hddid_example_p_xb hddid_example_p_fz
+
+di as text ""
+di as text "Bare predict without newvar or more than one of xb/fz/tau is still rejected:"
+capture noisily predict
+di as text "  bare predict rc:  " _rc " (expected 198)"
+capture noisily predict double hddid_example_p_bad, xb fz
+di as text "  xb+fz predict rc: " _rc " (expected 198)"
+
+di as text ""
+di as text "hddid_estat and margins remain unsupported:"
 capture noisily hddid_estat summarize
-di as text "hddid_estat summarize rc: " _rc " (unsupported estat contract)"
+di as text "  hddid_estat summarize rc: " _rc " (expected 198)"
 capture noisily margins
-di as text "margins rc: " _rc " (disabled because no prediction contract is published)"
-di as text "Use bare replay plus the stored e() objects instead"
-di as text "for aggregate beta / omitted-intercept z-varying output: ereturn list | matrix list e(b) | matrix list e(z0) | matrix list e(gdebias) | matrix list e(stdg) | matrix list e(tc) | matrix list e(CIpoint) | matrix list e(CIuniform)"
-di as text "matrix list e(xdebias) | matrix list e(stdx) | matrix list e(V)"
-di as text "Published beta coordinate order e(xvars): `e(xvars)'"
-di as text "e(xvars) is the published beta coordinate order behind e(b) and the beta block of e(CIpoint)."
-di as text "e(b) is the canonical Stata coefficient vector and matches e(xdebias)."
-di as text "e(V) is the canonical parametric covariance surface, with diag(e(V)) = e(stdx)^2 on the active result surface."
-di as text "e(z0) is the posted evaluation grid behind e(gdebias), e(stdg), e(CIuniform), and the trailing omitted-intercept z-varying block of e(CIpoint)."
-// Retired exact-token audit traceability only: e(z0) is the posted evaluation grid behind e(gdebias), e(stdg), e(CIpoint), and e(CIuniform).
-di as text "e(method) identifies the stored sieve basis."
-di as text "When e(method)=Tri, inspect e(z_support_min) and e(z_support_max) before reading the omitted-intercept z-varying block on e(z0)."
-di as text "e(CIpoint) uses its first e(p) columns for the beta block in e(xvars) order."
-di as text "Its remaining e(qq) columns are the omitted-intercept z-varying block aligned with e(z0)."
-di as text "The same stored nonparametric surface always carries e(stdg) and the published e(CIuniform) object on that current e(z0) grid."
-di as text "When available, e(tc) is the duplicate bootstrap critical-value pair behind the published e(CIuniform) interval object."
-di as text "Legacy replay/direct unsupported postestimation can still use the published e(CIuniform) object when e(tc) is absent; current replay/direct unsupported postestimation instead require the bundled e(gdebias), e(stdg), e(CIuniform), e(tc), and e(CIpoint) objects on current saved-results surfaces and fail closed before ancillary provenance reconciliation."
-di as text "When e(tc) is stored, current replay/direct unsupported postestimation validate that provenance against the published e(CIuniform) object."
-di as text "because hddid does not currently publish e(a0), use centered comparisons rather than treating the public omitted-intercept block as either a full ATT level or a raw f(z0) level."
+di as text "  margins rc:               " _rc " (expected non-zero)"
+
+di as text ""
+di as text "Use the stored e() objects directly for aggregate output:"
+di as text "  ereturn list | matrix list e(b) | matrix list e(z0) | matrix list e(gdebias) | matrix list e(stdg) | matrix list e(tc) | matrix list e(CIpoint) | matrix list e(CIuniform)"
+di as text "  matrix list e(xdebias) | matrix list e(stdx) | matrix list e(V) | matrix list e(gammabar) | display e(a0)"
+di as text "  Published beta coordinate order e(xvars): `e(xvars)'"
+di as text "  e(b) matches e(xdebias); diag(e(V)) = e(stdx)^2 on the active result surface."
+di as text "  e(z0) is the posted evaluation grid behind e(gdebias), e(stdg), e(CIuniform), and the trailing nonparametric block of e(CIpoint)."
+di as text "  Under e(method)=Tri, inspect e(z_support_min) and e(z_support_max) before reading the nonparametric block on e(z0)."
+di as text "  e(CIpoint) uses its first e(p) columns for the beta block in e(xvars) order and its remaining e(qq) columns for the centered nonparametric block aligned with e(z0)."
+di as text "  e(tc) is the bootstrap critical-value pair behind e(CIuniform)."
+di as text "  The full nonparametric level at z0 is e(a0) + e(gdebias), and the full heterogeneous ATT at a test point is x0'e(b) + e(a0) + f(z0)."
 
 // --- Diagnostic: Check post-trim per-fold effective sample sizes ---
 di as text ""

@@ -201,8 +201,8 @@ def _probe_safe_callback_expr(
 ):
     """Allow eager callback builtins to invoke only known-pure callables."""
     if isinstance(node, ast.Name):
-        # Callbacks passed to eager builtins (map/filter) must resolve to the
-        # actual builtin/pure allowlist entry, not a sidecar-defined shadow.
+        # Callback arguments to eager builtins must resolve to known-pure
+        # callables, not locally shadowed bindings.
         return (
             node.id in probe_safe_calls
             and node.id not in probe_safe_names
@@ -486,9 +486,8 @@ def _probe_safe_expr(
     if isinstance(node, ast.Call):
         callee = _probe_callee_name(node.func)
         if callee == "dict.fromkeys":
-            # Pure dict.fromkeys(...) constants are safe to keep in the probe
-            # module: they evaluate eagerly without side effects and often feed
-            # top-level flags that hddid_clime_requires_scipy() reads.
+            # dict.fromkeys(...) with constant arguments is side-effect-free
+            # and safe for the probe namespace.
             return (
                 1 <= len(node.args) <= 2
                 and all(
@@ -2235,10 +2234,9 @@ def main():
             if hasattr(probe_sfi, "SFIToolkit"):
                 module.__dict__.setdefault("SFIToolkit", getattr(probe_sfi, "SFIToolkit"))
 
-        # Execute the sanitized probe module under the same read-only SFI
-        # guard used for runtime helper calls so top-level imports/aliases such
-        # as `WRITE = Scalar.setValue` cannot freeze a writable Stata handle
-        # into the probe-only namespace before preflight begins.
+        # Execute the sanitized probe module under a read-only SFI guard to
+        # prevent writable Stata handles from being captured in the probe
+        # namespace.
         with _probe_guarded_sfi(module):
             exec(compile(probe_mod, str(module_path), "exec"), module.__dict__)
         setattr(module, "_hddid_safe_probe_only", 1)
@@ -2257,16 +2255,13 @@ def main():
 
     probe_only = bool(getattr(module, "_hddid_safe_probe_only", 0))
     if probe_only:
-        # Probe-only cache entries are sanitized feasibility snapshots, not
-        # authoritative runtime-solve sidecars. Drop any stale bridge that may
-        # have been attached to a reused module object before re-publishing the
-        # probe namespace so downstream runtime gates cannot mistake it for a
-        # full CLIME module.
+        # Probe-only entries are sanitized feasibility snapshots, not complete
+        # runtime modules. Remove any stale bridge attribute to prevent
+        # downstream confusion with a fully loaded module.
         module.__dict__.pop("_hddid_bridge_call_clime_solve", None)
-        # Downstream ado bridge lookups prefer the main-module cache when both
-        # names resolve to the requested path. If a probe-only refresh leaves a
-        # stale same-path main module behind, the bridge can keep consulting the
-        # pre-refresh namespace instead of the freshly sanitized probe module.
+        # Remove the stale main-module cache entry so that subsequent lookups
+        # resolve to the freshly sanitized probe module rather than a
+        # pre-refresh namespace.
         sys.modules.pop(module_name, None)
         sys.modules[probe_name] = module
     else:

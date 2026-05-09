@@ -1,19 +1,12 @@
 # -*- coding: utf-8 -*-
-"""hddid_clime: CLIME precision matrix estimation for hddid-stata
+"""CLIME precision matrix estimation for the hddid Stata package.
 
-Implements the CLIME (Constrained L1-Minimization for Inverse Matrix
-Estimation) algorithm for high-dimensional precision matrix estimation.
-The scalar p=1 bridge uses the analytic covariance inverse directly.
-For multivariate retained covariances, even an exactly diagonal sample path
-still follows the R flare::sugm(method="clime") +
-sugm.select(criterion="cv", loss="tracel2") lambda/loss contract once the
-fold partition is fixed. The Python bridge uses NumPy's RNG stream for CV
-partitions, so the same numeric seed need not reproduce R
-flare::part.cv() fold identities exactly.
-
-Reference: Cai, T., Liu, W. & Luo, X. (2011). A constrained L1
-minimization approach to sparse precision matrix estimation.
-Journal of the American Statistical Association, 106(494), 594-607.
+Implements the Constrained L1-Minimization for Inverse Matrix Estimation
+(CLIME) algorithm for high-dimensional precision matrix estimation.
+For p = 1 the analytic inverse of the empirical second moment is used
+directly.  For p > 1 the precision matrix is estimated column by column
+via linear programming with cross-validated lambda selection and
+symmetrization.
 """
 __version__ = "1.0.0"
 
@@ -153,15 +146,12 @@ def _has_concrete_runtime_parameters(obj):
 
 
 def _prefer_concrete_object_signature(obj, call):
-    """Return whether object-level signature should outrank a generic __call__.
+    """Return whether the object-level signature is more informative than __call__.
 
-    Some legacy callable objects intentionally expose their public API through
-    ``__signature__`` while implementing the runtime adapter itself as a
-    generic ``__call__(*args, **kwargs)`` shim. In that shape, preferring the
-    generic call signature reroutes CLIME tuning kwargs into an anonymous
-    positional tail even though the object advertises a concrete keyword-aware
-    contract. Only prefer the object-level signature when it is strictly more
-    informative than the callable entry point.
+    Some callable objects expose their public API through ``__signature__``
+    while implementing ``__call__(*args, **kwargs)`` as a generic shim.
+    Prefer the object-level signature when it is strictly more informative
+    than the callable entry point.
     """
     obj_optional_hints = _signature_optional_hint_count(obj)
     call_optional_hints = _signature_optional_hint_count(call)
@@ -313,13 +303,13 @@ def _prefer_follow_false_runtime_signature(
     follow_false_signature,
     follow_true_signature,
 ):
-    """Return whether runtime signature must outrank stale wrapped metadata.
+    """Return whether the runtime signature must outrank the wrapped metadata.
 
     Decorator-style wrappers sometimes expose ``__wrapped__`` metadata from a
-    keyword-aware publisher even though the runtime entry point itself accepts
-    any additional CLIME/runtime hints only through ``*args``. In that shape,
-    the bridge must follow the real wrapper signature so optional hints stay in
-    the positional tail instead of being re-routed into unsupported kwargs.
+    keyword-aware publisher even though the runtime entry point accepts
+    additional CLIME hints only through ``*args``.  The bridge must follow the
+    real wrapper signature so optional hints stay in the positional tail
+    instead of being re-routed into unsupported kwargs.
     """
     if follow_false_signature is None or follow_true_signature is None:
         return False
@@ -349,7 +339,7 @@ def _prefer_follow_false_runtime_signature(
 
 
 def _resolve_plain_function_runtime_signature(obj):
-    """Rebuild a plain function signature without stale exported metadata."""
+    """Rebuild a plain function signature without exported metadata."""
     if not inspect.isfunction(obj):
         return None
     try:
@@ -371,7 +361,7 @@ def _resolve_plain_function_runtime_signature(obj):
 
 
 def _resolve_plain_callable_runtime_signature(candidate):
-    """Rebuild a plain callable or partial thereof without stale metadata."""
+    """Rebuild a plain callable or partial thereof without exported metadata."""
     partial_args = ()
     partial_keywords = {}
     target = candidate
@@ -470,10 +460,7 @@ def _resolve_candidate_signature(candidate):
             follow_false_signature,
         ):
             return plain_runtime_signature
-        # functools.partial already publishes the bound runtime contract. When
-        # that concrete signature exists, stale __wrapped__ metadata on the
-        # partial object must not outrank it and leak bridge-only kwargs into
-        # the downstream solver/helper callable.
+        # functools.partial already publishes the bound runtime contract.
         return follow_false_signature
     if _prefer_follow_false_runtime_signature(
         follow_false_signature,
@@ -499,15 +486,15 @@ def _resolve_candidate_signature(candidate):
 def _uses_generic_class_new_with_specific_init(obj):
     """Return whether class dispatch may need a raw __new__ factory attempt.
 
-    Some legacy publishers expose a generic factory-style ``__new__(*args,
-    **kwargs)`` that directly returns the final non-instance result object, so
-    Python never runs ``__init__``. In that shape, preferring ``__init__`` for
-    signature filtering silently drops explicit bridge/runtime kwargs that the
-    effective factory entry point would accept. Detect the narrow shape where a
-    class (or ``functools.partial(class)``) has a generic ``__new__`` but also
-    defines a more specific ``__init__`` so callers can try the raw factory
-    kwargs first and fall back to the filtered ``__init__`` contract only when
-    Python reports a real constructor-signature mismatch.
+    Some callable classes expose a generic factory-style ``__new__(*args,
+    **kwargs)`` that directly returns the final result object, so Python never
+    runs ``__init__``.  In that shape, preferring ``__init__`` for signature
+    filtering silently drops explicit bridge kwargs that the effective factory
+    entry point would accept.  Detect the narrow shape where a class (or
+    ``functools.partial(class)``) has a generic ``__new__`` but also defines a
+    more specific ``__init__`` so callers can try the raw factory kwargs first
+    and fall back to the filtered ``__init__`` contract only when Python
+    reports a real constructor-signature mismatch.
     """
     partial_args = ()
     partial_kwargs = {}
@@ -557,7 +544,7 @@ def _uses_generic_class_new_with_specific_init(obj):
 
 
 def _resolve_bridge_signature(obj):
-    """Best-effort bridge signature lookup for legacy callable objects."""
+    """Best-effort bridge signature lookup for callable objects."""
     if inspect.isfunction(obj):
         runtime_signature = _resolve_plain_function_runtime_signature(obj)
         exported_signature = None
@@ -624,14 +611,7 @@ def _resolve_bridge_signature(obj):
                 and not _is_plain_callable_alias(partial_func)
             )
         ):
-            # functools.partial preserves bound args/kwargs, but for callable
-            # objects it can still inherit stale object-level __signature__
-            # metadata from the wrapped instance. Rebuild the partial around
-            # the real runtime __call__ entry point first so bridge dispatch
-            # keeps the effective CLIME tuning kwargs. Classes are handled
-            # separately above via __new__/__init__ because type.__call__
-            # collapses constructor-specific keyword contracts into a generic
-            # (*args, **kwargs) shim.
+            # Rebuild the partial around the runtime __call__ entry point.
             try:
                 partial_call_candidate = functools.partial(
                     partial_call,
@@ -668,14 +648,8 @@ def _resolve_bridge_signature(obj):
             if new_candidate is not None:
                 candidates.append(new_candidate)
     if prefer_object_signature:
-        # functools.partial exposes the wrapped callable's effective runtime
-        # signature on the partial object itself, while partial.__call__ only
-        # reports a generic (*args, **kwargs) shim. Prefer the object-level
-        # signature so bridge dispatch preserves CLIME's algorithmic keywords,
-        # except when a callable object's stale object-level metadata is known
-        # to outrank the true runtime __call__ contract. For classes, prefer
-        # __new__/__init__ first because class-level __signature__ metadata can
-        # drift away from the actual construction contract.
+        # Prefer the object-level signature for functools.partial and class
+        # objects.
         candidates.append(obj)
     if (
         call is not None
@@ -683,10 +657,7 @@ def _resolve_bridge_signature(obj):
         and not _is_plain_callable_alias(obj)
         and not prefer_object_signature
     ):
-        # Callable objects sometimes carry stale __signature__ metadata even
-        # though their real runtime contract lives on __call__. Prefer the
-        # actual call entry point for object instances so bridge dispatch keeps
-        # the algorithmic CLIME arguments that the runtime callable accepts.
+        # Prefer the actual __call__ entry point for callable object instances.
         if _prefer_concrete_object_signature(obj, call):
             candidates.append(obj)
         candidates.append(call)
@@ -756,11 +727,6 @@ def _filter_bridge_optional_kwargs(obj, kwargs):
     """Return bridge optional args split into positional tail and kwargs."""
     signature = _resolve_bridge_signature(obj)
     if signature is None:
-        # When signature introspection is unavailable, preserve the full bridge
-        # tail for the direct call attempt. If the runtime callable turns out to
-        # be a legacy positional-only / *args hook, the TypeError retry path
-        # must still see parallel/nproc/verbose rather than silently downgrading
-        # the retained-sample solver mode.
         return (), dict(kwargs)
 
     parameters = signature.parameters
@@ -813,15 +779,8 @@ def _filter_bridge_optional_kwargs(obj, kwargs):
                 )
             ):
                 last_positional_tail_index = index
-        # Some legacy bridge callables expose a mixed contract where the early
-        # CLIME tuning slots remain regular positional parameters and the
-        # remaining suffix falls through *args. Once any later bridge option
-        # needs the varargs tail, keep the whole contiguous optional segment
-        # aligned instead of mixing keyword dispatch for the leading slots and
-        # silently dropping requested runtime flags such as parallel/nproc/
-        # verbose. functools.partial does not narrow the wrapped callable's
-        # surviving *args contract, so the same contiguous-tail rule still
-        # applies after partial binding.
+        # Keep the contiguous optional segment aligned when any bridge option
+        # needs the varargs tail.
         for name in bridge_tail_names[: last_positional_tail_index + 1]:
             if name in filtered:
                 positional_tail.append(filtered.pop(name))
@@ -829,16 +788,10 @@ def _filter_bridge_optional_kwargs(obj, kwargs):
         parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     ):
-        # **kwargs means the bridge explicitly accepts optional CLIME flags even
-        # when it does not spell them out in the exported signature. Keep those
-        # keywords instead of silently deleting them and changing solver mode.
+        # **kwargs accepts optional CLIME flags; preserve them.
         return tuple(positional_tail), filtered
     if _bridge_runtime_accepts_var_keyword(obj):
-        # Callable objects can publish a narrower object-level __signature__ even
-        # though their real runtime __call__(*args, **kwargs) still accepts
-        # explicit bridge flags such as parallel/nproc/verbose. Preserve the
-        # caller's requested runtime mode instead of deleting those kwargs just
-        # because stale metadata won signature resolution.
+        # Preserve runtime flags that the callable's __call__ accepts.
         return tuple(positional_tail), filtered
     for name in tuple(filtered):
         if name not in parameters:
@@ -847,7 +800,7 @@ def _filter_bridge_optional_kwargs(obj, kwargs):
 
 
 def _bridge_optional_tail_from_kwargs(kwargs):
-    """Return canonical CLIME/runtime args for signatureless legacy solvers."""
+    """Return canonical CLIME/runtime args for signatureless solvers."""
     return tuple(
         kwargs[name]
         for name in (
@@ -877,7 +830,7 @@ def _is_plain_no_keyword_typeerror_message(message):
 
 
 def _should_retry_bridge_positional_tail(exc):
-    """Return whether keyword dispatch hit a positional-only legacy contract."""
+    """Return whether keyword dispatch hit a positional-only contract."""
     message = str(exc)
     has_bridge_tail_name = any(
         name in message
@@ -1157,10 +1110,7 @@ def _get_linprog():
         _SCIPY_LINPROG = None
     if linprog is not None and not callable(linprog):
         linprog = _SCIPY_LINPROG if _SCIPY_LINPROG is not None else None
-    # The Stata bridge can drop and reload scipy in the embedded Python session
-    # after shadow-import repair. Refresh the cached solver when the current
-    # SciPy identity changes, but preserve an explicit test monkeypatch on this
-    # module when no cache refresh is needed.
+    # Refresh the cached solver when the SciPy module identity changes.
     if current_scipy_optimize is None and _SCIPY_LINPROG is not None:
         if linprog is _SCIPY_LINPROG:
             linprog = None
@@ -1171,14 +1121,10 @@ def _get_linprog():
         and linprog is not None
         and _is_scipy_optimize_alias_like(linprog)
     ):
-        # After a dependency uncache, a stale imported scipy.optimize* handle
-        # must not outrank a fresh import from the current environment.
         linprog = None
     if current_scipy_optimize is not None and current_linprog is None:
-        # A partial/shadow scipy.optimize must not silently fall back to a
-        # previously cached scipy handle from another module identity.
-        # Preserve an explicit non-scipy module-level hook when the current
-        # session installed one directly and the authoritative cache is empty.
+        # A partial scipy.optimize must not fall back to a previously cached
+        # handle from another module identity.
         preserve_explicit_hook = (
             linprog is not None
             and linprog is not _SCIPY_LINPROG
@@ -1201,13 +1147,8 @@ def _get_linprog():
             )
         )
     ):
-        # Once scipy.optimize itself has changed identity, a surviving
-        # scipy.optimize handle is no longer authoritative. Refresh to the
-        # active scipy.optimize.linprog from the current environment instead
-        # of reusing an orphaned scipy callable left over from an earlier
-        # session state. Preserve explicit non-scipy hooks, even when they are
-        # plain functions, because the bridge cannot distinguish those from
-        # intentional overrides when the authoritative cache is empty.
+        # Refresh to the active scipy.optimize.linprog when the module identity
+        # has changed.
         linprog = current_linprog
         _SCIPY_LINPROG = current_linprog
     if (
@@ -1223,11 +1164,8 @@ def _get_linprog():
             )
         )
     ):
-        # When the module-level alias survives but the authoritative cache is
-        # empty, prefer the active scipy.optimize.linprog identity only when
-        # the surviving alias itself still looks like a scipy.optimize handle
-        # from an earlier Python session state. Preserve explicit module-level
-        # overrides such as contract tests that intentionally replace linprog.
+        # Prefer the active scipy.optimize.linprog when the surviving alias
+        # is a stale handle.
         linprog = current_linprog
         _SCIPY_LINPROG = current_linprog
     cached_linprog = _SCIPY_LINPROG
@@ -1245,15 +1183,7 @@ def _get_linprog():
             )
         )
     ):
-        # When both cached handles survive but drift away from the active
-        # scipy.optimize.linprog identity, treat the imported module as
-        # authoritative and refresh both caches together. Explicit module-level
-        # overrides should survive unless the surviving handle still looks like
-        # an old scipy.optimize callable-object/function alias left behind by a
-        # prior module identity swap. A stale authoritative cache should
-        # refresh _SCIPY_LINPROG, but it must not silently override an
-        # explicit callable-object hook that the current session intentionally
-        # installed.
+        # Refresh both caches when they drift from the active linprog identity.
         if (
             linprog is None
             or linprog is cached_linprog
@@ -1369,24 +1299,13 @@ def _resolve_runtime_linprog_solver(return_source=False):
                     )
                 )
             ):
-                # The internal resolver is allowed to surface the active runtime
-                # solver, but it must not let an orphaned scipy.optimize alias
-                # from an earlier module identity outrank the current loaded
-                # scipy.optimize.linprog handle.
+                # Do not let an orphaned scipy.optimize alias outrank the
+                # current scipy.optimize.linprog handle.
                 solver = current_linprog
                 solver_source = "current"
         except _RuntimeSolverResolverContractError:
-            # A resolver that returns a coroutine/awaitable/non-callable payload
-            # is itself the broken authoritative runtime contract. Falling back
-            # to a stale alias or imported solver would mask that bridge error.
             raise
         except Exception as exc:
-            # Runtime validation should still honor an explicit solver hook or
-            # active scipy.optimize.linprog handle when the cached resolver
-            # itself is the stale dependency artifact that failed. Preserve the
-            # original exception when no authoritative fallback exists, but do
-            # not let the cached resolver outrank a known-good
-            # explicit/current solver.
             solver = None
             resolver_exc = exc
 
@@ -1403,9 +1322,6 @@ def _resolve_runtime_linprog_solver(return_source=False):
             and module_linprog is not None
             and _is_scipy_optimize_alias_like(module_linprog)
         ):
-            # Mirror _get_linprog(): once scipy.optimize has been uncached, a
-            # leftover scipy.optimize* alias from an earlier session must not
-            # outrank a fresh import from the current environment.
             module_linprog = None
         if (
             current_scipy_optimize is not None
@@ -1413,10 +1329,6 @@ def _resolve_runtime_linprog_solver(return_source=False):
             and module_linprog is not None
             and _is_scipy_optimize_alias_like(module_linprog)
         ):
-            # Mirror _get_linprog(): once the active scipy.optimize module is
-            # present but exposes a missing/non-callable linprog handle, a
-            # stale scipy alias from an earlier session must not satisfy the
-            # runtime bridge contract.
             module_linprog = None
         if (
             module_linprog is not None
@@ -1430,10 +1342,6 @@ def _resolve_runtime_linprog_solver(return_source=False):
                 )
             )
         ):
-            # Mirror the stale-handle refresh rule from _get_linprog(): after
-            # a resolver/import failure, a surviving scipy.optimize* alias
-            # left on this module must not outrank the active
-            # scipy.optimize.linprog identity from the current session.
             module_linprog = current_linprog
         if module_linprog is not None:
             solver = module_linprog
@@ -1443,11 +1351,6 @@ def _resolve_runtime_linprog_solver(return_source=False):
             solver_source = "current"
         else:
             if resolver_exc is not None:
-                # The embedded-session resolver is authoritative for whether a
-                # usable runtime solver still exists. If it is broken and no
-                # explicit or currently loaded solver handle survives, do not
-                # mask that bridge corruption by importing a fresh SciPy
-                # solver from outside the active runtime state.
                 raise resolver_exc
             try:
                 from scipy.optimize import linprog as scipy_linprog
@@ -1481,9 +1384,8 @@ def hddid_clime_validate_solver_runtime():
     """Validate the runtime LP solver contract used by non-diagonal CLIME."""
     solver, solver_source = _resolve_runtime_linprog_solver(return_source=True)
 
-    # Mirror the actual solve path exactly: _solve_clime_column() never passes
-    # an explicit bounds keyword, so the runtime probe must not validate a
-    # solver contract that differs from the one CLIME actually uses.
+    # Probe the solver with the same argument shape used by
+    # _solve_clime_column().
     probe_kwargs = {
         "c": [1.0],
         "A_ub": [[1.0]],
@@ -1510,20 +1412,13 @@ def hddid_clime_validate_solver_runtime():
         validate_result(probe, 1, 0, 0.0)
         try:
             validate_probe_solution(probe)
-            # The runtime gate should enforce only the OptimizeResult fields
-            # that the downstream CLIME solve actually consumes. Some explicit
-            # solver hooks omit fun while still satisfying the solve-path
-            # contract.
+            # Enforce only the OptimizeResult fields that the CLIME solve
+            # consumes.
             if callable(validate_probe_objective) and hasattr(probe, "fun"):
                 validate_probe_objective(probe)
         except TypeError as probe_exc:
-            # The runtime gate must mirror the same synchronous LP contract
-            # that _solve_clime_column() will actually consume. Some explicit
-            # hooks return the real p=1 CLIME column OptimizeResult rather than
-            # a dedicated 1-variable probe payload; if that authoritative
-            # solver still satisfies the column contract, accept it here too so
-            # the preflight does not reject a solver the actual solve path can
-            # use successfully.
+            # Accept solvers that return the p=1 CLIME column result rather
+            # than a dedicated 1-variable probe payload.
             try:
                 _validate_runtime_linprog_probe_column_fallback(probe)
             except TypeError:
@@ -1578,11 +1473,10 @@ def _validate_multix_runtime_solver_contract(p):
     c = np.ones(2 * p, dtype=np.float64)
     probe_sigmas = [np.eye(p, dtype=np.float64)]
     if p > 1:
-        # Paper Eq. (4.2) and the R CLIME path operate on the retained raw
-        # second moment, which is generically non-identity on finite folds.
-        # A runtime hook that only hard-codes the identity operator still
-        # violates the multivariate CLIME contract even if it passes the
-        # trivial identity-column probe.
+        # The retained-sample second moment is generically non-identity on
+        # finite folds.  A runtime hook that only hard-codes the identity
+        # operator still violates the multivariate CLIME contract even if it
+        # passes the trivial identity-column probe.
         Sigma_nonidentity = np.eye(p, dtype=np.float64)
         Sigma_nonidentity[0, 1] = 0.25
         Sigma_nonidentity[1, 0] = 0.25
@@ -1847,10 +1741,8 @@ def _validate_nonconstant_columns(name, value):
     value = np.asarray(value, dtype=np.float64)
     if value.ndim != 2:
         raise ValueError(f"{name} must be a 2D matrix, got ndim={value.ndim}")
-    # Reject only columns that are exactly constant in the incoming floating
-    # representation. Tiny but strictly positive variation still defines a
-    # finite covariance operator and should not be collapsed into "constant"
-    # by a unit-scale epsilon threshold.
+    # Reject only columns that are exactly constant in the incoming floating-
+    # point representation.
     constant_mask = np.ptp(value, axis=0) == 0.0
     if np.any(constant_mask):
         constant_cols = ", ".join(str(int(idx) + 1) for idx in np.flatnonzero(constant_mask))
@@ -1876,9 +1768,7 @@ def _validate_precision_matrix_contract(name, value):
         )
 
     scale = float(np.max(np.abs(value)))
-    # Symmetry is a property of this precision operator itself. Use the
-    # operator's own scale so tiny but well-defined covariance inverses do not
-    # inherit a unit-scale floor that can hide same-order asymmetry.
+    # Use the operator's own scale for the symmetry tolerance.
     if not np.isfinite(scale) or scale <= 0.0:
         scale = 1.0
     sym_tol = 1e-10 * scale
@@ -1890,16 +1780,13 @@ def _validate_precision_matrix_contract(name, value):
         )
     singular_values = np.linalg.svd(value, compute_uv=False)
     singular_scale = float(np.max(singular_values))
-    # Invertibility is likewise relative to this operator's singular spectrum:
-    # a tiny but well-conditioned precision matrix remains a valid inverse
-    # operator after a finite coordinate rescaling of X.
+    # Invertibility is relative to the operator's singular spectrum.
     if not np.isfinite(singular_scale) or singular_scale <= 0.0:
         singular_scale = 1.0
     singular_tol = 1e-10 * singular_scale
-    # The paper and the R/Mata debiasing path use this object as a retained
-    # covariance inverse operator. That contract requires numerical
-    # invertibility, not positive definiteness of the finite-sample CLIME
-    # estimate itself.
+    # The debiasing path uses this object as a retained-sample covariance
+    # inverse operator.  That contract requires numerical invertibility, not
+    # positive definiteness of the finite-sample CLIME estimate itself.
     if float(np.min(singular_values)) <= singular_tol:
         raise ValueError(
             f"{name} must be numerically invertible within tolerance "
@@ -2212,10 +2099,10 @@ def _solve_clime_column(Sigma, j, lam, A_ub=None):
         raise ValueError("Sigma must contain only finite numeric values")
     p = Sigma.shape[0]
     sigma_scale = float(np.max(np.abs(Sigma)))
-    # Sigma is the retained covariance operator in paper eq. (4.2), so its
-    # symmetry contract should be judged on Sigma's own scale rather than
-    # against a unit-scale floor that can hide same-order asymmetry after a
-    # harmless coordinate rescaling of X.
+    # Sigma is the retained-sample second-moment operator, so its symmetry
+    # contract should be judged on Sigma's own scale rather than against a
+    # unit-scale floor that can hide same-order asymmetry after a harmless
+    # coordinate rescaling of X.
     if not np.isfinite(sigma_scale) or sigma_scale <= 0.0:
         sigma_scale = 1.0
     sym_tol = np.finfo(np.float64).eps * sigma_scale * p
@@ -2303,14 +2190,13 @@ def _compute_scale_stable_second_moment(x, *, matrix_label):
 
 
 def _compute_covariance(tildex, perturb=True):
-    """Compute the retained raw second-moment operator with perturbation.
+    """Compute the retained-sample second-moment operator with optional perturbation.
 
-    Paper equation (4.2) defines the multivariate CLIME target on the
-    empirical retained operator ``E_n[tildeX_i tildeX_i']``. The bridge must
-    therefore use the raw second moment directly rather than a centered
-    surrogate, because finite retained folds and held-out validation splits can
-    have nonzero column means even when the full residualization basis contains
-    an intercept.
+    The multivariate CLIME target is the empirical second-moment operator
+    E_n[tildeX_i tildeX_i'].  The raw second moment is used directly rather
+    than a centered surrogate because finite retained folds and held-out
+    validation splits can have nonzero column means even when the full
+    residualization basis contains an intercept.
 
     Parameters
     ----------
@@ -2335,11 +2221,10 @@ def _compute_covariance(tildex, perturb=True):
         raise ValueError(f"tildex must have p >= 1 columns, got p={p}")
     tildex = _validate_observed_matrix("tildex", tildex)
     if p > 1:
-        # Paper equation (4.2) defines the multivariate CLIME program on the
-        # empirical retained covariance itself. An exact zero-variance column
-        # means that object is already rank-deficient before any numerical
-        # ridge term is added, so perturbation cannot rescue the underlying
-        # retained-sample identification failure.
+        # An exact zero-variance column means the retained-sample second-moment
+        # operator is already rank-deficient before any numerical ridge term is
+        # added, so perturbation cannot rescue the underlying identification
+        # failure.
         tildex = _validate_nonconstant_columns("tildex", tildex)
     Sigma = _compute_scale_stable_second_moment(
         tildex,
@@ -2355,12 +2240,11 @@ def _compute_covariance(tildex, perturb=True):
 
 
 def _raw_second_moment_diagonal_precision_if_applicable(tildex, matrix_label="tildex"):
-    """Return the exact raw retained-operator inverse when it is diagonal.
+    """Return the exact second-moment inverse when the operator is diagonal.
 
-    For multivariate folds, the paper and the R reference consume the retained
-    operator ``E_n[tildeX_i tildeX_i']`` directly. If that raw second moment is
-    already diagonal with strictly positive entries, the exact inverse is the
-    target object itself and no CLIME LP/CV path is needed.
+    When the retained-sample second-moment operator E_n[tildeX_i tildeX_i']
+    is diagonal with strictly positive entries, the exact inverse equals the
+    target precision matrix and no CLIME LP/CV path is needed.
     """
     Sigma_raw = _compute_scale_stable_second_moment(
         tildex,
@@ -2370,16 +2254,15 @@ def _raw_second_moment_diagonal_precision_if_applicable(tildex, matrix_label="ti
 
 
 def _single_x_second_moment_precision(tildex, matrix_label="tildex"):
-    """Return the p=1 analytic inverse 1 / E_n[tildeX^2].
+    """Return the p = 1 analytic inverse 1 / E_n[tildeX^2].
 
-    The beta-debias scalar shortcut in the paper/Mata path targets the
-    empirical second moment, not the centered n-1 sample covariance. Once the
-    retained tildex column has been materialized, the identifying contract is
-    only that E_n[tildeX^2] is finite and strictly positive; a nonzero sample
-    mean does not change the scalar operator defined in equation (4.2). The
-    inverse must therefore be computed on a scale-stable basis so large finite
-    retained folds do not collapse to zero solely because raw squaring
-    overflows before inversion.
+    The scalar debiasing shortcut targets the empirical second moment, not
+    the centered n-1 sample covariance.  Once the retained tildex column has
+    been materialized, the identifying condition is only that E_n[tildeX^2]
+    is finite and strictly positive; a nonzero sample mean does not change
+    the scalar operator.  The inverse is computed on a scale-stable basis so
+    that large finite retained folds do not collapse to zero solely because
+    raw squaring overflows before inversion.
     """
     tildex = np.asarray(tildex, dtype=np.float64)
     if tildex.ndim != 2 or tildex.shape[1] != 1:
@@ -2412,11 +2295,11 @@ def _single_x_second_moment_precision(tildex, matrix_label="tildex"):
 
 
 def _compute_val_covariance(tildex_val):
-    """Compute the validation raw second moment with a 1/n_val denominator.
+    """Compute the validation second moment with a 1/n_val denominator.
 
-    CLIME CV compares held-out folds against the same retained operator used in
-    the paper/R solve path. Validation loss therefore has to stay on
-    ``E_n[tildeX_i tildeX_i']`` rather than recentering the fold and evaluating
+    Cross-validation compares held-out folds against the same second-moment
+    operator used in the full-sample solve.  Validation loss therefore uses
+    E_n[tildeX_i tildeX_i'] rather than recentering the fold and evaluating
     a different covariance target.
 
     Parameters
@@ -2448,11 +2331,9 @@ def _compute_val_covariance(tildex_val):
 
 
 def _symmetrize_clime(Omega):
-    """CLIME symmetrization: for each pair (i,j) take the value with smaller abs.
+    """Symmetrize the raw CLIME precision matrix via the min-abs rule.
 
-    Matches flare::sugm CLIME symmetrization behavior.
-
-    Math:
+    For each pair (i, j) take the entry with the smaller absolute value:
         Theta_ij = Omega_ij  if |Omega_ij| <= |Omega_ji|
         Theta_ij = Omega_ji  if |Omega_ji| <  |Omega_ij|
 
@@ -2582,10 +2463,10 @@ def _symmetrize_clime_for_contract(Omega, Sigma=None, lam=None):
 
                 # Once the raw unsymmetrized columns miss the selected lambda,
                 # the published-matrix contract falls back to the looser
-                # retained-sample cap used by the ado layer. Exact-tie
-                # symmetrization should therefore prefer whichever symmetric
-                # choice preserves that published cap rather than arbitrarily
-                # defaulting to the upper-triangle sign.
+                # retained-sample cap.  Exact-tie symmetrization should
+                # therefore prefer whichever symmetric choice preserves that
+                # cap rather than arbitrarily defaulting to the upper-triangle
+                # sign.
                 cap = float(np.max(np.abs(Sigma - np.diag(np.diag(Sigma)))))
                 upper_sigma = Sigma @ Theta[:, [i, j]]
                 lower_sigma = Sigma @ lower_theta[:, [i, j]]
@@ -2616,12 +2497,12 @@ def _validate_selected_clime_precision_or_raise(
 ):
     """Fail-close on an empty CLIME path before publish-time matrix writes.
 
-    flare::sugm() can legitimately return an all-zero path when every lambda in
-    the current grid already makes the zero matrix feasible. On duplicated or
-    otherwise highly collinear retained designs, sugm.select() then has no
-    positive-diagonal opt.icov to publish. Surface that degeneracy directly
-    instead of letting the later Stata write-back step fail with a generic
-    precision-matrix contract error.
+    The CLIME solver can legitimately return an all-zero precision path when
+    every lambda in the current grid already makes the zero matrix feasible.
+    On duplicated or otherwise highly collinear retained designs, no
+    positive-diagonal precision estimate survives selection.  Surface that
+    degeneracy directly instead of letting the later Stata write-back step
+    fail with a generic precision-matrix contract error.
     """
     try:
         return _validate_precision_matrix_contract(
@@ -2657,8 +2538,9 @@ def _validate_selected_clime_precision_or_raise(
                     f"the current lambda grid [{lambda_hi:.6g}, ..., {lambda_lo:.6g}] "
                     f"(best lambda={best_lambda:.6g}) leaves the symmetrized precision "
                     "matrix without strictly positive diagonal entries. This retained "
-                    "tildex design matches the flare::sugm.select() empty-path case "
-                    "where no publishable opt.icov survives the default CLIME grid. "
+                    "tildex design corresponds to the degenerate CLIME path "
+                    "where no precision estimate with strictly positive diagonal "
+                    "survives the current lambda grid. "
                     "Shrink lambda_min_ratio or widen the lambda grid before "
                     "re-running this multivariate retained fold."
                 ) from exc
@@ -2679,13 +2561,9 @@ def _diagonal_precision_if_applicable(Sigma):
 
     diag = np.diag(Sigma)
     offdiag = Sigma - np.diag(diag)
-    # Covariance construction can leave machine-zero off-diagonal residue even
-    # when the centered columns are orthogonal in exact arithmetic. Treat those
-    # roundoff artifacts as diagonal so the bridge does not spuriously require
-    # SciPy/CLIME for what is mathematically the analytic inverse path.
-    # Use Sigma's own pairwise coordinate scale. A global rescaling of X should
-    # not change whether Sigma is judged diagonal, so an absolute unit floor
-    # would incorrectly bless same-order tiny off-diagonal entries.
+    # Treat machine-zero off-diagonal residue as diagonal so the solver does
+    # not spuriously require the CLIME LP/CV path for what is mathematically the
+    # analytic inverse.  Use Sigma's own pairwise coordinate scale.
     pair_scale = np.sqrt(np.outer(np.abs(diag), np.abs(diag)))
     offdiag_tol = np.finfo(np.float64).eps * pair_scale
     if np.any(np.abs(offdiag) > offdiag_tol):
@@ -2707,16 +2585,21 @@ def _diagonal_precision_if_applicable(Sigma):
 
 
 def _generate_lambda_grid(Sigma, nlambda=5, lambda_min_ratio=0.4):
-    """
-    生成CLIME的lambda候选网格，匹配flare::sugm默认参数。
+    """Generate a logarithmic lambda candidate grid for CLIME.
 
-    参数:
-        Sigma: np.ndarray, (p, p) 协方差矩阵（含对角扰动）
-        nlambda: int, 候选lambda数量（默认5，匹配sugm默认nlambda=5）
-        lambda_min_ratio: float, 最小lambda与最大lambda之比（默认0.4，匹配sugm对clime的默认）
+    Parameters
+    ----------
+    Sigma : np.ndarray, shape (p, p)
+        Covariance matrix (with diagonal perturbation applied).
+    nlambda : int
+        Number of candidate lambda values (default 5).
+    lambda_min_ratio : float
+        Ratio of lambda_min to lambda_max (default 0.4).
 
-    返回:
-        lambdas: np.ndarray, (nlambda,) 从大到小排列的lambda值
+    Returns
+    -------
+    lambdas : np.ndarray, shape (nlambda,)
+        Candidate lambda values in descending order.
     """
     nlambda = _validate_positive_int("nlambda", nlambda, minimum=1)
     lambda_min_ratio = _validate_lambda_min_ratio(lambda_min_ratio)
@@ -2729,9 +2612,9 @@ def _generate_lambda_grid(Sigma, nlambda=5, lambda_min_ratio=0.4):
     lambda_max = np.max(np.abs(Sigma_offdiag))
 
     if lambda_max <= 0:
-        # With exact zero off-diagonal covariance, the CLIME feasibility bound
-        # collapses to lambda=0. Fabricating a positive lambda grid would
-        # introduce shrinkage that is not implied by the paper or the R path.
+        # With exact zero off-diagonal covariance, the CLIME feasibility
+        # bound collapses to lambda = 0.  Fabricating a positive lambda grid
+        # would introduce spurious shrinkage.
         return np.zeros(nlambda, dtype=np.float64)
 
     lambda_min = lambda_min_ratio * lambda_max
@@ -2792,23 +2675,27 @@ def _validate_cv_nfolds(n, nfolds):
 
 
 def _part_cv(n, nfolds, random_state=None):
-    """
-    实现R包part.cv()的完整块切分结构。
+    """Construct K-fold CV partitions with contiguous post-permutation blocks.
 
     The fold layout uses contiguous post-permutation blocks whose sizes differ
     by at most one observation, so every retained observation appears in
-    exactly one validation fold. The RNG stream is NumPy-based, so a given
-    numeric seed is reproducible within hddid's Python bridge but need not
-    yield the identical permutation that R's sample()/part.cv() would draw.
+    exactly one validation fold.
 
-    参数:
-        n: int, 总样本量
-        nfolds: int, 折数
-        random_state: int or None, 随机种子
+    Parameters
+    ----------
+    n : int
+        Total sample size.
+    nfolds : int
+        Number of folds.
+    random_state : int or None
+        Random seed for reproducibility.
 
-    返回:
-        test_indices: list of np.ndarray, 每折的测试集观测索引
-        train_indices: list of np.ndarray, 每折的训练集观测索引
+    Returns
+    -------
+    test_indices : list of np.ndarray
+        Observation indices for each validation fold.
+    train_indices : list of np.ndarray
+        Observation indices for each training fold.
     """
     _validate_cv_nfolds(n, nfolds)
     random_state = _validate_optional_int(
@@ -2842,21 +2729,30 @@ def _part_cv(n, nfolds, random_state=None):
 
 
 def _cv_select_lambda(tildex, lambdas, nfolds_cv=5, perturb=True, random_state=None):
-    """
-    通过K折交叉验证选择CLIME的最优lambda。
-    在给定fold划分下匹配 flare::sugm.select(criterion="cv", loss="tracel2")
-    的损失定义与聚合行为。
+    """Select the CLIME regularization parameter via K-fold cross-validation.
 
-    参数:
-        tildex: np.ndarray, (n, p) 投影残差数据
-        lambdas: np.ndarray, (nlambda,) 候选lambda值
-        nfolds_cv: int, CV折数（默认5）
-        perturb: bool, 是否添加对角扰动
-        random_state: int or None, 随机种子
+    The validation loss is the squared Frobenius norm of the residual
+    Sigma_val @ Theta - I, averaged across folds.
 
-    返回:
-        best_lambda: float, 使CV loss最小的lambda
-        cv_losses: np.ndarray, (nlambda,) 每个lambda的平均CV loss
+    Parameters
+    ----------
+    tildex : np.ndarray, shape (n, p)
+        Projected residual data.
+    lambdas : np.ndarray, shape (nlambda,)
+        Candidate lambda values.
+    nfolds_cv : int
+        Number of CV folds (default 5).
+    perturb : bool
+        Whether to add diagonal perturbation to training covariance.
+    random_state : int or None
+        Random seed for fold splitting.
+
+    Returns
+    -------
+    best_lambda : float
+        Lambda minimizing the average CV loss.
+    cv_losses : np.ndarray, shape (nlambda,)
+        Average CV loss for each candidate lambda.
     """
     import warnings
 
@@ -2900,11 +2796,8 @@ def _cv_select_lambda(tildex, lambdas, nfolds_cv=5, perturb=True, random_state=N
                     Omega_raw[:, col] = w
 
                 if all_cols_ok:
-                    # Match flare::sugm.select() exactly during CV loss
-                    # evaluation. The Stata bridge needs a symmetric final
-                    # precision matrix, but the inner tracel2 path in flare
-                    # uses the raw min-abs symmetrization even when abs-ties
-                    # leave Omega asymmetric.
+                    # Apply the min-abs symmetrization rule during CV loss
+                    # evaluation.
                     Theta = _symmetrize_clime(Omega_raw)
                     Theta_list.append(Theta)
                     solve_success.append(True)
@@ -2933,8 +2826,7 @@ def _cv_select_lambda(tildex, lambdas, nfolds_cv=5, perturb=True, random_state=N
 
             Theta = Theta_list[j]
             M = Sigma_val @ Theta - np.eye(p)
-            # CLIME tunes a full precision operator, so the validation loss
-            # must penalize the full residual matrix, not only its diagonal.
+            # The validation loss penalizes the full residual matrix.
             loss = float(np.sum(M * M))
             cv_loss_sum[j] += loss
             cv_loss_count[j] += 1
@@ -3058,10 +2950,7 @@ def _store_precision_matrix(Matrix, covinv_matname, Theta):
             f"Stata matrix '{covinv_matname}' did not overwrite with the "
             f"computed {Theta.shape[0]} x {Theta.shape[1]} precision matrix."
         ) from exc
-    # Stata's matrix bridge may canonicalize a numerically symmetric matrix
-    # when writing into a symmetric matrix slot. Accept round-trips that stay
-    # within double-precision bridge tolerance instead of requiring bitwise
-    # identity after host normalization.
+    # Accept round-trips within double-precision tolerance.
     writeback_scale = max(
         1.0,
         float(np.max(np.abs(Theta))),
@@ -3425,10 +3314,10 @@ def _publish_precision_results(
     elif authoritative_scalar_store is not None:
         if scalar_name in authoritative_scalar_store:
             scalar_prior_value = authoritative_scalar_store[scalar_name]
-            # Mapping-backed test/host bridges may keep a None sentinel instead
-            # of omitting the key when the scalar is absent. Align that
-            # semantics with the getValue()-only path so rollback drops the
-            # synthetic effective-fold scalar instead of restoring None.
+            # Mapping-backed bridges may keep a None sentinel instead of
+            # omitting the key when the scalar is absent.  Align that semantics
+            # with the getValue()-only path so rollback drops the synthetic
+            # effective-fold scalar instead of restoring None.
             scalar_had_prior_value = scalar_prior_value is not None
     elif scalar_precleared:
         scalar_had_prior_value = False
@@ -3440,7 +3329,7 @@ def _publish_precision_results(
         raise TypeError(
             "sfi.Scalar must expose an authoritative scalar bridge via "
             "setValue() when multiple mutable mapping views exist; "
-            "getValue() alone can still leave the host-visible scalar stale."
+            "getValue() alone can still leave the host-visible scalar out of sync."
         )
     if (
         scalar_had_prior_value
@@ -3466,7 +3355,7 @@ def _publish_precision_results(
             "getValue() or setValue() when multiple mutable mapping views "
             "exist; otherwise publishing __hddid_clime_effective_nfolds "
             "could update one view while leaving the host-visible prior "
-            "scalar stale."
+            "scalar out of sync."
         )
     if (
         not scalar_had_prior_value
@@ -3501,9 +3390,8 @@ def _publish_precision_results(
             "setValue() or a mutable mapping store to publish "
             "__hddid_clime_effective_nfolds."
         )
-    # A plain mutable backing store can be restored directly after a failed
-    # publish. Only bridges with no store, or with an independent readable host
-    # snapshot via getValue(), require a second setValue() call on rollback.
+    # A mutable backing store can be restored directly; bridges without one
+    # require a second setValue() call on rollback.
     scalar_restore_via_setvalue = callable(scalar_set_value) and (
         scalar_store is None
         or callable(scalar_get_value)
@@ -3774,10 +3662,10 @@ def _publish_auxiliary_scalar_flag(Scalar, name, value):
     ):
         return True
 
-    # Auxiliary flags are diagnostic only. If host-visible readback never
+    # Auxiliary flags are diagnostic only.  If host-visible readback never
     # agrees, or the primary effective-fold contract was never established,
     # fail closed and remove any partially published authoritative residue so
-    # the ado layer cannot observe stand-alone CLIME metadata. Preserve the
+    # the caller cannot observe stand-alone CLIME metadata.  Preserve the
     # plain mutable-store fallback when getValue() makes the auxiliary flag
     # unreadable: that path is optional metadata, not authoritative readback.
     if (
@@ -3858,10 +3746,8 @@ def _running_inside_stata_host():
         return False
     if bool(getattr(sfi_module, "_hddid_direct_python_bridge", False)):
         return False
-    # A direct-Python shim may expose Matrix/Scalar-like objects for testing or
-    # standalone use without running inside Stata's embedded host. Only a
-    # declared sfi.SFIToolkit.stata() bridge reliably signals the host session
-    # that must avoid forked workers.
+    # Only a declared sfi.SFIToolkit.stata() bridge reliably signals the host
+    # session that must avoid forked workers.
     return _get_declared_sfi_stata_callable() is not None
 
 
@@ -4034,12 +3920,10 @@ def hddid_clime_requires_scipy(tildex_matname, perturb=True):
 
     tildex = _validate_nonconstant_columns(matrix_label, tildex)
 
-    # The scalar p=1 path has an exact analytic inverse. For p>1, BUG-4426
-    # moved exact diagonal retained operators onto the same CLIME + CV contract
-    # as generic multivariate folds so __hddid_clime_effective_nfolds keeps the
-    # realized tuning metadata aligned with paper Eq. (4.2) and hddid-r. Only
-    # an explicit non-SciPy runtime LP hook can waive the SciPy dependency for
-    # those multivariate retained folds.
+    # For p > 1, exact diagonal retained operators follow the same CLIME + CV
+    # contract as generic multivariate folds so the realized tuning metadata
+    # remains consistent.  Only an explicit non-SciPy runtime LP hook can waive
+    # the SciPy dependency for those multivariate retained folds.
     del n, perturb
     if _multix_runtime_hook_makes_scipy_optional(p):
         return False
@@ -4166,13 +4050,8 @@ def _hddid_bridge_call_clime_solve(
 
     try:
         _validate_runtime_solver_callable(obj, "hddid_clime_solve")
-        # This private entry point is the Stata bridge. When it delegates to
-        # the package's own hddid_clime_solve() publisher, the ado layer later
-        # validates multivariate CLIME output against the realized CV-fold
-        # metadata in __hddid_clime_effective_nfolds, so the bridge must fail
-        # closed before any matrix write-back when the Scalar contract is
-        # unavailable. Keep pure argument-dispatch tests for monkeypatched
-        # legacy solvers free of this publish-time requirement.
+        # Fail closed before matrix write-back when the Scalar contract is
+        # unavailable for the Stata bridge path.
         if (
             getattr(obj, "__module__", "") == getattr(module, "__name__", "")
             and getattr(obj, "__name__", "") == "hddid_clime_solve"
@@ -4272,7 +4151,7 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
     parallel = _validate_bool_flag("parallel", parallel)
     verbose = _validate_bool_flag("verbose", verbose)
 
-    # BUG-114: reject lambda_min_ratio <= 0
+    # Reject non-positive lambda_min_ratio
     if not isinstance(lambda_min_ratio, (int, float)) or isinstance(lambda_min_ratio, bool):
         raise ValueError(
             f"lambda_min_ratio must be a positive number, got {type(lambda_min_ratio).__name__}"
@@ -4282,7 +4161,7 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
             f"lambda_min_ratio must satisfy 0 < lambda_min_ratio <= 1, got {lambda_min_ratio}"
         )
 
-    # BUG-115: reject non-integer nlambda (including bool)
+    # Reject non-integer nlambda (including bool)
     if isinstance(nlambda, bool) or not isinstance(nlambda, int):
         raise ValueError(
             f"nlambda must be a positive integer, got {type(nlambda).__name__}: {nlambda!r}"
@@ -4290,7 +4169,7 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
     if nlambda < 1:
         raise ValueError(f"nlambda must be >= 1, got {nlambda}")
 
-    # BUG-116: reject bool random_state
+    # Reject bool random_state
     if isinstance(random_state, bool):
         raise ValueError(
             f"random_state must be an integer or None, not bool ({random_state!r})"
@@ -4381,11 +4260,11 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         _log_progress(verbose, "CLIME: done.")
         return
 
-    # For p>1 the paper/R contract keeps the retained covariance inverse on the
-    # CLIME + CV path even when the raw second moment happens to be diagonal.
-    # The exact inverse can still reappear as the selected Omega, but the
-    # realized-fold metadata must record the CV tuning contract instead of a
-    # multivariate zero-fold shortcut.
+    # For p > 1 the retained covariance inverse follows the CLIME + CV path
+    # even when the raw second moment happens to be diagonal.  The exact
+    # inverse can still reappear as the selected Omega, but the realized-fold
+    # metadata must record the CV tuning contract instead of a multivariate
+    # zero-fold shortcut.
     if p > 1 and Sigma is None:
         Sigma, _ = _compute_covariance(tildex, perturb=perturb)
     nfolds_cv = _validate_integer_scalar("nfolds_cv", nfolds_cv, minimum=2)
@@ -4402,11 +4281,8 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         Scalar = _optional_scalar_bridge_for_direct_python()
     scalar_precleared = _scalar_precleared_for_solver(Scalar, scalar_name)
     if _direct_call_can_skip_scalar_publish(Scalar, scalar_name):
-        # The matrix write-back is the primary direct-Python output. When a
-        # lightweight test/non-Stata bridge exposes only getValue()/setValue()
-        # without any host rollback primitive, solving the retained-sample
-        # CLIME problem should still succeed instead of failing on auxiliary
-        # effective-fold metadata that only the Stata ado bridge consumes.
+        # The matrix write-back is the primary direct-Python output; auxiliary
+        # scalar metadata should not block the solve for non-Stata callers.
         Scalar = None
         scalar_precleared = False
     effective_nfolds_cv = _resolve_cv_nfolds(n, nfolds_cv)
@@ -4605,12 +4481,8 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         _clime_column_feasibility_gap(Sigma, Omega[:, j], j)
         for j in range(p)
     )
-    # This feasibility flag is about the selected CLIME bound itself. The raw
-    # residual Sigma @ Omega - I is dimensionless, so the only permissible
-    # slack here is floating-point matrix-multiply roundoff on that residual
-    # evaluated on the bound's own scale. A unit floor would certify
-    # tiny-scale raw columns as feasible even when they materially exceed the
-    # selected lambda.
+    # The feasibility flag compares the raw residual Sigma @ Omega - I against
+    # the selected lambda on its own scale.
     tol_scale = max(
         abs(float(best_lambda)),
         raw_gap,
@@ -4618,11 +4490,8 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
     if not np.isfinite(tol_scale) or tol_scale <= 0.0:
         tol_scale = 1.0
     tol = np.finfo(np.float64).eps * tol_scale * p
-    # This auxiliary scalar certifies whether the unsymmetrized CLIME columns
-    # still satisfy the selected retained-sample CLIME constraint. The ado
-    # layer already knows the looser lambda-max cap from Sigma's off-diagonals;
-    # publishing that relaxed bound here would incorrectly bless raw columns
-    # that fail the actually selected lambda.
+    # Auxiliary scalar certifying whether the unsymmetrized CLIME columns
+    # satisfy the selected lambda constraint.
     raw_feasible = 1.0 if raw_gap <= best_lambda + tol else 0.0
 
     Theta = _symmetrize_clime_for_contract(
@@ -4630,115 +4499,29 @@ def hddid_clime_solve(tildex_matname, covinv_matname,
         Sigma=Sigma,
         lam=best_lambda,
     )
-    try:
-        Theta = _validate_selected_clime_precision_or_raise(
-            Theta,
-            Omega=Omega,
-            Sigma=Sigma,
-            best_lambda=best_lambda,
-            lambdas=lambdas,
+    # Validate the selected CLIME precision matrix and fail-close on any
+    # degeneracy. Paper Eq (4.2) requires the LP-based CLIME estimator;
+    # neither lambda-grid retries nor a ridge-regularized inverse satisfy
+    # that contract, so we propagate the validation error and let the caller
+    # surface it as a hard CLIME failure rather than substituting a
+    # different precision-matrix estimator.
+    Theta = _validate_selected_clime_precision_or_raise(
+        Theta,
+        Omega=Omega,
+        Sigma=Sigma,
+        best_lambda=best_lambda,
+        lambdas=lambdas,
+    )
+    if raw_feasible == 0.0:
+        raise ValueError(
+            "CLIME columns violate the selected lambda feasibility bound: "
+            f"raw_gap={raw_gap:.6g} > best_lambda={best_lambda:.6g}. "
+            "The CV-selected lambda grid does not produce a feasible CLIME "
+            "solution for this fold; paper Eq (4.2)'s required precision "
+            "matrix estimator is unavailable. Increase n, reduce p, or "
+            "adjust climenlambda()/climelambdaminratio() to widen the LP "
+            "grid before retrying."
         )
-    except (RuntimeError, ValueError):
-        # Degenerate-path recovery: the current lambda grid yielded either an
-        # all-zero precision matrix (RuntimeError degenerate path) or a
-        # rank-deficient non-invertible symmetrized Omega (ValueError from
-        # _validate_precision_matrix_contract). Both occur when n << p or the
-        # sieve-projected retained design is near-collinear.
-        # Retry with progressively smaller lambda_min_ratio to widen the grid,
-        # then fall back to diagonal precision when all grids remain degenerate.
-        # This is the statistically appropriate fallback for small/collinear
-        # retained designs (e.g. n<<p after propensity trimming).
-        import warnings as _clime_warnings_retry
-        _fallback_ratios = [
-            r for r in (0.1, 0.01, 0.001, 0.0001)
-            if r < lambda_min_ratio - 1e-12
-        ]
-        _retry_resolved = False
-        for _fb_ratio in _fallback_ratios:
-            _fb_lambdas = _generate_lambda_grid(
-                Sigma, nlambda=nlambda, lambda_min_ratio=_fb_ratio
-            )
-            with _clime_warnings_retry.catch_warnings(record=True):
-                _clime_warnings_retry.simplefilter("always")
-                _fb_best_lam, _ = _cv_select_lambda(
-                    tildex, _fb_lambdas,
-                    nfolds_cv=effective_nfolds_cv,
-                    perturb=perturb,
-                    random_state=random_state,
-                )
-            _fb_A_ub = np.block([[Sigma, -Sigma], [-Sigma, Sigma]])
-            _fb_Omega = np.zeros((p, p))
-            _fb_col_ok = True
-            for _col in range(p):
-                try:
-                    _fb_Omega[:, _col] = _solve_clime_column(
-                        Sigma, _col, _fb_best_lam, A_ub=_fb_A_ub
-                    )
-                except Exception as _col_exc:
-                    if _is_clime_fullsolve_hard_failure(_col_exc):
-                        raise
-                    _fb_col_ok = False
-                    break
-            if not _fb_col_ok:
-                continue
-            _fb_Theta = _symmetrize_clime_for_contract(
-                _fb_Omega, Sigma=Sigma, lam=_fb_best_lam
-            )
-            try:
-                Theta = _validate_selected_clime_precision_or_raise(
-                    _fb_Theta,
-                    Omega=_fb_Omega,
-                    Sigma=Sigma,
-                    best_lambda=_fb_best_lam,
-                    lambdas=_fb_lambdas,
-                )
-                _fb_raw_gap = max(
-                    _clime_column_feasibility_gap(Sigma, _fb_Omega[:, _c], _c)
-                    for _c in range(p)
-                )
-                _fb_tol_scale = max(abs(float(_fb_best_lam)), _fb_raw_gap)
-                if not np.isfinite(_fb_tol_scale) or _fb_tol_scale <= 0.0:
-                    _fb_tol_scale = 1.0
-                raw_feasible = (
-                    1.0
-                    if _fb_raw_gap
-                    <= _fb_best_lam
-                    + np.finfo(np.float64).eps * _fb_tol_scale * p
-                    else 0.0
-                )
-                _log_progress(
-                    verbose,
-                    f"CLIME: degenerate-path retry succeeded "
-                    f"(lambda_min_ratio={_fb_ratio:.4g}, "
-                    f"best_lambda={_fb_best_lam:.6g}).",
-                )
-                _retry_resolved = True
-                break
-            except (RuntimeError, ValueError):
-                continue
-        if not _retry_resolved:
-            # Final fallback: direct inverse of the perturbed covariance matrix,
-            # i.e. (Sigma + 1/sqrt(n)*I)^{-1}.  The 1/sqrt(n) ridge perturbation
-            # is already baked into `Sigma` by _compute_covariance(perturb=True),
-            # so np.linalg.solve(Sigma, I) gives the ridge-regularized precision.
-            # This is more principled than the diagonal fallback: it retains the
-            # full off-diagonal covariance structure and converges to the true
-            # precision matrix as n -> infinity (the perturbation vanishes).
-            # Falls back to the Moore-Penrose pseudo-inverse when Sigma is still
-            # numerically singular after perturbation (e.g., n < p).
-            try:
-                Theta = np.linalg.solve(Sigma, np.eye(p))
-                if not np.isfinite(Theta).all():
-                    raise np.linalg.LinAlgError("non-finite entries after solve")
-            except np.linalg.LinAlgError:
-                Theta = np.linalg.pinv(Sigma)
-            raw_feasible = 1.0
-            _log_progress(
-                verbose,
-                "CLIME: all lambda grids degenerate; "
-                "using ridge-regularized inverse fallback "
-                "(Sigma + 1/sqrt(n)*I)^{-1}.",
-            )
 
     # -- Step 7: Write back to Stata --
     _log_progress(

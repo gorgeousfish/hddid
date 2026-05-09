@@ -1,4 +1,3 @@
-/*! version 1.0.0 */
 capture program drop _hddid_estimate
 program define _hddid_estimate, eclass sortpreserve
 
@@ -75,7 +74,7 @@ program define _hddid_estimate, eclass sortpreserve
                     di as error "  Offending method() input: " as text `"`_hddid_bad_method_raw'"'
                 }
                 di as error "  Reason: {bf:method()} uses option syntax; write {bf:method(Pol)} or {bf:method(Tri)}, not assignment-style {bf:method=(...)}"
-                di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+                di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
                 exit 198
             }
             di as error "{bf:hddid}: method() must be {bf:Pol} or {bf:Tri}, got {bf:`_hddid_bad_method_disp'}"
@@ -83,7 +82,7 @@ program define _hddid_estimate, eclass sortpreserve
                 di as error "  Offending method() input: " as text `"`_hddid_bad_method_raw'"'
             }
             di as error "  Reason: {bf:method()} selects only the sieve basis family; it is not an AIPW, IPW, or RA estimator switch"
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             exit 198
         }
         quietly _hddid_parse_estopt_rbridge, ///
@@ -306,7 +305,7 @@ program define _hddid_estimate, eclass sortpreserve
                     di as error "  Offending method() input: " as text `"`_hddid_bad_method_raw'"'
                 }
                 di as error "  Reason: {bf:method()} uses option syntax; write {bf:method(Pol)} or {bf:method(Tri)}, not assignment-style {bf:method=(...)}"
-                di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+                di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
                 exit 198
             }
             di as error "{bf:hddid}: method() must be {bf:Pol} or {bf:Tri}, got {bf:`_hddid_bad_method_disp'}"
@@ -314,7 +313,7 @@ program define _hddid_estimate, eclass sortpreserve
                 di as error "  Offending method() input: " as text `"`_hddid_bad_method_raw'"'
             }
             di as error "  Reason: {bf:method()} selects only the sieve basis family; it is not an AIPW, IPW, or RA estimator switch"
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             exit 198
         }
         if `"`_hddid_pre_method'"' != "" {
@@ -327,7 +326,7 @@ program define _hddid_estimate, eclass sortpreserve
                 di as error "  Offending method() input: " as text `"`_hddid_pre_method_raw'"'
             }
             di as error "  Reason: use syntax {bf:hddid depvar, treat(...) x(...) z(...) method(Pol)} or {bf:method(Tri)}; the token before the comma is reserved for the outcome-change depvar"
-            di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+            di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
             exit 198
         }
     }
@@ -344,6 +343,7 @@ program define _hddid_estimate, eclass sortpreserve
           NOFirst PIhat(varname numeric) PHI1hat(varname numeric) PHI0hat(varname numeric) ///
           SEED(string) ///
           NBoot(integer 1000) ///
+          STAGE1penalty(string) ///
           VERBose ]
     if _rc != 0 {
         // Stata's syntax command requires lowercase option names.  Users may
@@ -361,6 +361,7 @@ program define _hddid_estimate, eclass sortpreserve
                 "NOFirst:nofirst" "Nofirst:nofirst" ///
                 "PIhat:pihat" "PHI1hat:phi1hat" "PHI0hat:phi0hat" ///
                 "Verbose:verbose" "VERBOSE:verbose" ///
+                "STAGE1penalty:stage1penalty" "Stage1penalty:stage1penalty" "STAGE1PENALTY:stage1penalty" ///
                 "Z0:z0" {
                 local _hddid_from : word 1 of `=subinstr(`"`_hddid_optpair'"', ":", " ", 1)'
                 local _hddid_to   : word 2 of `=subinstr(`"`_hddid_optpair'"', ":", " ", 1)'
@@ -382,6 +383,7 @@ program define _hddid_estimate, eclass sortpreserve
                   NOFirst PIhat(varname numeric) PHI1hat(varname numeric) PHI0hat(varname numeric) ///
                   SEED(string) ///
                   NBoot(integer 1000) ///
+                  STAGE1penalty(string) ///
                   VERBose ]
             if _rc == 0 {
                 local _hddid_syntax_retry 1
@@ -435,7 +437,7 @@ program define _hddid_estimate, eclass sortpreserve
     if !inlist("`method'", "Pol", "Tri") {
         di as error "{bf:hddid}: method() must be {bf:Pol} or {bf:Tri}, got {bf:`method'}"
         di as error "  Reason: {bf:method()} selects only the sieve basis family; it is not an AIPW, IPW, or RA estimator switch"
-        di as error "  {bf:hddid} implements the paper's doubly robust AIPW estimator throughout"
+        di as error "  {bf:hddid} implements the doubly robust AIPW estimator throughout"
         exit 198
     }
 
@@ -461,7 +463,26 @@ program define _hddid_estimate, eclass sortpreserve
 
     if `nboot' < 2 {
         di as error "{bf:hddid}: nboot() must be an integer >= 2, got `nboot'"
-        di as error "  Reason: a single Gaussian bootstrap draw cannot identify the quantile-based rowwise-envelope lower/upper critical-value pair behind the published CIuniform interval object"
+        di as error "  Reason: a single Gaussian bootstrap draw cannot identify the (1-alpha)-quantile of max_j |T_j*| behind the paper Theorem 5.2 sup-quantile critical value {bf:c*} posted as {bf:e(tc)} = {bf:(-c*, +c*)} (nor the legacy rowwise-envelope pair behind {bf:e(tc_env)})"
+        exit 198
+    }
+
+    // P1-b: stage1penalty() controls whether the sieve basis psi(Z) columns
+    // are L1-penalized in the Stage-1 nuisance lassos for Pi, Phi1, Phi0.
+    //   full     : penalize the full W = (X, psi(Z)) design (matches the R
+    //              reference highdimdiffindiff_crossfit_inside.r line 45/71/72
+    //              where penalty.factor = pf is commented out). DEFAULT.
+    //   partial  : leave psi(Z) unpenalized (notpen) like the Stage-2 lasso,
+    //              consistent with the partially linear structure of tau in
+    //              paper Theorem 1 carried forward to the AIPW nuisance
+    //              functions Phi_d.
+    if `"`stage1penalty'"' == "" {
+        local stage1penalty "full"
+    }
+    local stage1penalty = strtrim(strlower(`"`stage1penalty'"'))
+    if !inlist("`stage1penalty'", "full", "partial") {
+        di as error "{bf:hddid}: stage1penalty() must be {bf:full} or {bf:partial}, got {bf:`stage1penalty'}"
+        di as error "  Reason: {bf:stage1penalty()} switches whether the Stage-1 lassos for {bf:pi(W)}, {bf:Phi1(W)}, {bf:Phi0(W)} penalize the low-dimensional sieve basis psi(Z) columns alongside the high-dimensional X columns; only {bf:full} (penalize all of W, the R reference behavior) and {bf:partial} (notpen the psi(Z) columns, partially-linear-consistent with Stage-2) are supported"
         exit 198
     }
 
@@ -742,22 +763,39 @@ program define _hddid_estimate, eclass sortpreserve
     local mm_nfolds = 10
     local mm_min_eval_per_fold = 2
     local clime_nfolds_cv_requested = 5
-    local clime_nlambda_requested = 5
+    local clime_nlambda_requested = 10
+    // CLIME lambda grid ratio; 0.01 extends the grid by two orders of
+    // magnitude so CV has a realistic interior optimum across p/n regimes
+    // (at p >> n the optimal lambda'' can be much smaller than 0.4*lambda_max).
     local clime_lambda_min_ratio = 0.01
-    // cvlassologit, nfolds(3) stratified still late-crashes on some 3/3/6
-    // training subsets. Fail closed below 4/4/8 so fold-level propensity CV
-    // never reaches the known getMinIC()/PostResults conformability path.
+    // P2-a dev escape hatch: diagnostic do-files may override the CLIME
+    // tuning defaults via globals without introducing a public command-line
+    // option. Unset globals leave the hard-coded defaults untouched. Only
+    // used to investigate SE sensitivity to CLIME tuning; not documented.
+    if `"${HDDID_DEV_CLIME_NFOLDS_CV}"' != "" {
+        capture confirm integer number ${HDDID_DEV_CLIME_NFOLDS_CV}
+        if _rc == 0 {
+            local clime_nfolds_cv_requested = ${HDDID_DEV_CLIME_NFOLDS_CV}
+        }
+    }
+    if `"${HDDID_DEV_CLIME_NLAMBDA}"' != "" {
+        capture confirm integer number ${HDDID_DEV_CLIME_NLAMBDA}
+        if _rc == 0 {
+            local clime_nlambda_requested = ${HDDID_DEV_CLIME_NLAMBDA}
+        }
+    }
+    if `"${HDDID_DEV_CLIME_RATIO}"' != "" {
+        capture confirm number ${HDDID_DEV_CLIME_RATIO}
+        if _rc == 0 {
+            local clime_lambda_min_ratio = ${HDDID_DEV_CLIME_RATIO}
+        }
+    }
+    // Minimum class sizes for propensity score CV to avoid conformability
+    // errors in small training subsets.
     local stage1_prop_min_class = 4
     local stage1_prop_min_total = 8
-    // A non-constant arm-specific outcome fit should not request fixed 5-fold
-    // CV unless each validation fold can hold at least two observations.
-    // Otherwise the public "fixed 5-fold outcome CV" contract degenerates
-    // into singleton-validation folds even when cvlasso still returns e(lopt).
-    // Stata's fixed cvlasso, nfolds(5) lopt outcome path still succeeds on
-    // non-constant arm-specific training samples with as few as 3 rows, but
-    // it fails at 2 rows because lopt is no longer identified. Guard that
-    // concrete runtime boundary directly instead of inventing a stricter
-    // per-fold validation-count rule the command itself does not require.
+    // Minimum training observations for a non-constant arm-specific outcome
+    // fit; below this threshold lopt is not identified.
     local outcome_min_total = 3
     local stage2_min_total = `stage2_nfolds' * `stage2_min_eval_per_fold'
     local mm_min_total = `mm_nfolds' * `mm_min_eval_per_fold'
@@ -794,7 +832,7 @@ program define _hddid_estimate, eclass sortpreserve
     if "`nofirst'" == "" & "`_default_prop_touse'" != "" {
         local _propensity_touse `_default_prop_touse'
         // Default-path D/W-complete rows that miss depvar() never enter the
-        // held-out common score sample or the paper's second-stage target.
+        // held-out common score sample or the second-stage target.
         // They may therefore widen the propensity nuisance fit for every held-
         // out score fold instead of being arbitrarily removed from one fold's
         // training sample by an auxiliary fold label.
@@ -859,7 +897,7 @@ program define _hddid_estimate, eclass sortpreserve
         quietly count if `_need_score_raw_nf' & missing(`pihat')
         if r(N) > 0 {
             di as error "{bf:hddid}: supplied {bf:pihat()} is missing on the common nonmissing score sample used by {bf:nofirst}"
-            di as error "  Reason: equation (3.1) forms the AIPW score only after {bf:depvar()}, {bf:pihat()}, {bf:phi1hat()}, and {bf:phi0hat()} are all realized on that common score sample"
+            di as error "  Reason: the AIPW score requires all nuisance functions to be realized on the common score sample before score construction"
             di as error "  A missing supplied {bf:pihat()} there is undefined nuisance input, not a rowwise overlap-trimming decision"
             exit 498
         }
@@ -899,7 +937,7 @@ program define _hddid_estimate, eclass sortpreserve
         // pretrim sample, but only treatment-arm split-key groups that still
         // contribute at least one retained-overlap pretrim row may pin the
         // retained estimator folds. Exact 0/1 groups are already outside the
-        // paper's overlap support, while legal near-boundary rows can still be
+        // overlap support, while legal near-boundary rows can still be
         // trimmed later without being erased from the retained-relevant
         // fold-pinning subset when a twin on the same treatment-arm key stays
         // inside the retained overlap region. Same-arm pihat() missing/value
@@ -1033,13 +1071,13 @@ program define _hddid_estimate, eclass sortpreserve
         if `_n1_score_nf' == 0 | `_n0_score_nf' == 0 {
             di as error "{bf:hddid}: common-score sample loses one treatment arm before overlap trimming"
             di as error "  Usable score sample: treated=`_n1_score_nf', control=`_n0_score_nf'"
-            di as error "  Reason: equation (3.1) forms the AIPW score on the common nonmissing score sample before overlap trimming, so both D=1 and D=0 must still be present at that stage"
+            di as error "  Reason: the AIPW score is formed on the common nonmissing score sample before overlap trimming, so both D=1 and D=0 must still be present at that stage"
             di as error "  Check missing {bf:depvar()}/{bf:phi1hat()}/{bf:phi0hat()} or supplied {bf:pihat()}; this is not an overlap-trimming failure"
             exit 2000
         }
         // The retained-sample duplicate-key nuisance contract is checked only
-        // after overlap trimming, because rows outside the paper's retained
-        // overlap region do not enter the AIPW score or second stage.
+        // after overlap trimming, because rows outside the retained overlap
+        // region do not enter the AIPW score or second stage.
     }
 
     local _outer_split_opts
@@ -1071,12 +1109,12 @@ program define _hddid_estimate, eclass sortpreserve
     if `_rowblock_realized_folds' < `k' {
         di as error "{bf:hddid}: fold-pinning outer split can realize only `_rowblock_realized_folds' nonempty folds under {bf:k(`k')}"
         if "`nofirst'" == "" {
-            di as error "  The default internal-first-stage path pins the outer split on the common score sample, and the paper/R row-block rule would therefore leave later fold labels empty before any first-stage fitting begins"
+            di as error "  The default internal-first-stage path pins the outer split on the common score sample, and the contiguous row-block rule would therefore leave later fold labels empty before any first-stage fitting begins"
         }
         else {
             di as error "  Under {bf:nofirst}, hddid still pins the outer split on contiguous current-row blocks of the nofirst fold-pinning sample, so later fold labels would be empty before any retained-score checks or second-stage work begin"
         }
-        di as error "  Reason: the maintained paper/R split assigns outer folds as contiguous current-row blocks on the fold-pinning sample, so {bf:k()} cannot exceed the number of nonempty row blocks implied by that sample size"
+        di as error "  Reason: the contiguous row-block split assigns outer folds as contiguous current-row blocks on the fold-pinning sample, so {bf:k()} cannot exceed the number of nonempty row blocks implied by that sample size"
         di as error "  Reduce {bf:k()} or enlarge the fold-pinning sample before estimation"
         exit 198
     }
@@ -1084,12 +1122,12 @@ program define _hddid_estimate, eclass sortpreserve
         (`_n1_score_default' == 0 | `_n0_score_default' == 0) {
         di as error "{bf:hddid}: common-score sample loses one treatment arm before overlap trimming"
         di as error "  Usable score sample: treated=`_n1_score_default', control=`_n0_score_default'"
-        di as error "  Reason: equation (3.1) forms the AIPW score on the common nonmissing score sample before overlap trimming, so both D=1 and D=0 must still be present at that stage"
+        di as error "  Reason: the AIPW score is formed on the common nonmissing score sample before overlap trimming, so both D=1 and D=0 must still be present at that stage"
         di as error "  Check missing {bf:`depvar'} values; this is not an overlap-trimming failure"
         exit 2000
     }
     // The default-path outer fold map follows contiguous row-order blocks
-    // on the fold-pinning common score sample, matching the paper/R split.
+    // on the fold-pinning common score sample.
     // can legitimately retain only one arm, so only represented arms must
     // still have enough observations to populate k folds.
     if (`n1' > 0 & `n1' < `k') | (`n0' > 0 & `n0' < `k') {
@@ -1505,8 +1543,8 @@ program define _hddid_estimate, eclass sortpreserve
     // representations. In nofirst mode, level shifts in depvar()/phi*() can
     // leave the DR score unchanged, so those variables cannot enter the fold
     // key without changing the estimator for a purely representational reason.
-    // The maintained R reference still realizes the split itself as contiguous
-    // current-row blocks on whatever sample pins the held-out identities.
+    // The outer split is realized as contiguous current-row blocks on
+    // whatever sample pins the held-out identities.
     if "`nofirst'" == "" & "`_default_prop_touse'" != "" & ///
         "`_outer_split_touse'" == "`touse'" & ///
         "`_default_prop_touse'" != "`touse'" {
@@ -1536,7 +1574,7 @@ program define _hddid_estimate, eclass sortpreserve
     }
     if _rc != 0 {
         di as error "{bf:hddid}: invalid outer split for k=`k'"
-        di as error "  Reason: the maintained paper/R split assigns outer folds as contiguous current-row blocks on the fold-pinning sample, so {bf:k()} cannot exceed the number of nonempty row blocks implied by that sample size"
+        di as error "  Reason: the contiguous row-block split assigns outer folds as contiguous current-row blocks on the fold-pinning sample, so {bf:k()} cannot exceed the number of nonempty row blocks implied by that sample size"
         di as error "  Fold feasibility is therefore driven by the realized fold-pinning sample after qualifier/missing-value preprocessing, not by counting distinct x()/z() keys"
         di as error "  Renaming, reordering, or duplicating the same x() information cannot create additional fold-pinning rows or rescue an infeasible {bf:k()}"
         exit _rc
@@ -1743,7 +1781,7 @@ program define _hddid_estimate, eclass sortpreserve
     }
 
     // Do not reclassify the outer split after the fold map is built. In
-    // nofirst mode the paper's score sample can be narrower than the broader
+    // nofirst mode the AIPW score sample can be narrower than the broader
     // fold-feasibility sample that pins pihat()'s OOF provenance, and after the
     // helper above succeeds `_fold_rank' is only bookkeeping for that already-
     // fixed split rather than a second feasibility oracle.
@@ -1783,7 +1821,7 @@ program define _hddid_estimate, eclass sortpreserve
         if "`nofirst'" == "" {
             if `_nk_fold' == 0 {
                 di as error "{bf:hddid}: common score sample leaves outer evaluation fold `_fk' empty under the default first-stage path"
-                di as error "  The paper's AIPW score is only formed on the common nonmissing score sample, so every realized outer fold must retain at least one such row"
+                di as error "  The AIPW score is only formed on the common nonmissing score sample, so every realized outer fold must retain at least one such row"
                 di as error "  Supply {bf:`depvar'} on at least one row in every realized outer fold, or reduce k()"
                 exit 2000
             }
@@ -1853,11 +1891,6 @@ program define _hddid_estimate, eclass sortpreserve
         }
     }
     else {
-        /*
-        Legacy audit anchor kept only because older worker15 string-contract
-        tests grep the source text instead of the executed runtime output:
-        di as text "  Cross-fitting:      k = `k' folds (contiguous current-row blocks on the nofirst fold-pinning sample)"
-        */
         di as text "  Cross-fitting:      k = `k' folds (contiguous current-row blocks on the nofirst fold-pinning sample)"
         di as text "  Inner CV folds:     second-stage=`stage2_nfolds', M-matrix=`mm_nfolds', CLIME<=`clime_nfolds_cv_requested'"
         if `seed' < 0 {
@@ -1931,7 +1964,7 @@ program define _hddid_estimate, eclass sortpreserve
     if `"`_empty_score_fold'"' != "" {
         if "`nofirst'" != "" {
             di as error "{bf:hddid}: common score sample leaves outer evaluation fold `_empty_score_fold' empty under {bf:nofirst}"
-            di as error "  Broader nofirst fold-feasibility rows can still pin outer fold IDs, but the paper's AIPW score is only formed on the common nonmissing score sample"
+            di as error "  Broader nofirst fold-feasibility rows can still pin outer fold IDs, but the AIPW score is only formed on the common nonmissing score sample"
             di as error "  This fold still contains broader nofirst rows with overlap-eligible {bf:pihat()} in [0.01, 0.99], so the empty score sample cannot be treated as a pure overlap-trimmed fold"
             di as error "  Supply depvar()/phi1hat()/phi0hat() on at least one row in every realized outer fold, or reduce k()"
             exit 2000
@@ -1983,7 +2016,7 @@ program define _hddid_estimate, eclass sortpreserve
                 di as error "  Common-score support: [`tri_zmin', `tri_zmax']"
                 di as error "  Propensity auxiliary support: [`_tri_prop_zmin', `_tri_prop_zmax']"
                 di as error "  D/W-complete rows with missing {bf:`depvar'} can widen only the internal propensity sample, not the support-normalized {bf:method(Tri)} basis used on the common score sample"
-                di as error "  Reason: feeding auxiliary-only rows outside that support into the default-path Tri nuisance stage would create periodic aliases unrelated to the paper's score sample"
+                di as error "  Reason: feeding auxiliary-only rows outside that support into the default-path Tri nuisance stage would create periodic aliases unrelated to the score sample"
                 exit 498
             }
         }
@@ -2010,8 +2043,8 @@ program define _hddid_estimate, eclass sortpreserve
         local zb_varlist `zb_varlist' `_zb_`j''
     }
     // Keep X first and the non-constant sieve terms after it so the Stage-2
-    // coefficient partition matches the paper's partially linear form and the
-    // current R reference implementation.
+    // coefficient partition matches the partially linear model
+    // tau(X,Z) = X'beta + f(Z).
     local w_vars `x' `zb_varlist'
     local zbf_varlist `_zbf_0'
     forvalues j = 1/`q' {
@@ -2085,22 +2118,44 @@ program define _hddid_estimate, eclass sortpreserve
         local _ps_ncols = `p' + `q' + 1
         local _nz_count = 0
         local lambda_ps = .
-        local _ps_hit_lmax = 0
 
         if `_ps_constant_w' {
+            // Mathematically unique solution when the training W is constant:
+            // a logistic regression with no covariate variation reduces to the
+            // intercept-only model whose response equals the training share of
+            // D=1. This is the exact paper-compatible Stage-1 nuisance under
+            // a degenerate covariate design, not an engineering substitute.
             local _p_train = `_n1_train_ps' / `_n_train_ps'
             quietly replace `_pihat' = `_p_train' if `_propensity_foldvar' == `_k' & `_propensity_touse'
             di as text "{bf:hddid} note: fold `_k' propensity training covariates are constant"
             di as text "  Using intercept-only propensity model with training share P(D=1)=" %9.6f `_p_train'
+            // Lambda ratio diagnostic is undefined for the intercept-only
+            // degenerate path because no penalized lasso is fit. Publish a
+            // missing value so downstream summaries clearly distinguish the
+            // degenerate fold from a genuine CV-selected lambda.
+            local _hddid_s1_lambda_ratio_`_k' = .
         }
         else {
+            // lambdan uses lambda:=lambda/N in the logistic objective so the
+            // cvlassologit CV grid is the conventional rate
+            // lambda ~ sqrt(log(p+q)/n) the paper's Assumption 8 requires.
+            // P1-b: stage1penalty(partial) leaves the sieve psi(Z) columns
+            // unpenalized, matching the partially-linear-consistent Stage-2
+            // notpen pattern. stage1penalty(full) (default) penalizes the
+            // full W = (X, psi(Z)) design.
+            local _stage1_notpen_ps ""
+            if "`stage1penalty'" == "partial" {
+                local _stage1_notpen_ps "notpen(`zb_varlist')"
+            }
             capture _hddid_run_rng_isolated `seed' ///
                 `_hddid_subcmd_prefix' cvlassologit `treat' `w_vars' if ///
                 `_propensity_train_if', ///
-                nfolds(`stage1_prop_nfolds') stratified
+                nfolds(`stage1_prop_nfolds') stratified lambdan `_stage1_notpen_ps'
             if _rc != 0 {
-                di as error "{bf:hddid}: cvlassologit failed in fold `_k' (rc=" _rc ")"
+                di as error "{bf:hddid}: cvlassologit (propensity) failed in fold `_k' (rc=" _rc ")"
                 di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
+                di as error "  Reason: paper Assumption 8 requires a cross-validated propensity-score lasso; no substitute estimator is published when CV fails."
+                di as error "  Common causes: near-separation of `treat' on `w_vars'; reduce p, increase n, fix data quality, or use {bf:nofirst} with user-supplied first-stage."
                 exit _rc
             }
 
@@ -2108,152 +2163,60 @@ program define _hddid_estimate, eclass sortpreserve
             local _ps_loptid = e(loptid)
             local _ps_lmax = e(lmax)
             local _ps_nlambda = e(lcount)
-            quietly _hddid_resolve_prop_cv, ///
-                fold(`_k') ///
-                ntrain(`_n_train_ps') ///
-                ntreat(`_n1_train_ps') ///
-                ncontrol(`_n0_train_ps')
-            local lambda_ps = r(lambda)
-            local _ps_loptid = r(loptid)
-            local _ps_lmax = r(lmax)
-            local _ps_nlambda = r(nlambda)
-            local _ps_missing_lopt = r(missing_lopt)
-            local _ps_hit_lmax = (`_ps_loptid' == 1)
-            local _ps_hit_lmin = (`_ps_nlambda' >= 1 & `_ps_loptid' == `_ps_nlambda')
+            if missing(`lambda_ps') | `lambda_ps' <= 0 {
+                di as error "{bf:hddid}: cvlassologit (propensity) returned an unusable e(lopt) in fold `_k'"
+                di as error "  e(lopt)=" `lambda_ps' ", e(loptid)=`_ps_loptid', e(lcount)=`_ps_nlambda', e(lmax)=" %9.6f `_ps_lmax'
+                di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
+                di as error "  Reason: cross-validation failed to identify a finite positive optimal lambda, so paper Assumption 8's required Stage-1 nuisance estimator is not available; no substitute is published."
+                di as error "  Common causes: near-separation, degenerate CV folds, or insufficient training sample."
+                exit 498
+            }
 
+            // Stage-1 lambda ratio diagnostic: paper Assumption 8 requires
+            // lambda ~ sqrt(log(p+q) / n_train); a CV lambda far above or
+            // below that rate signals an over- or under-shrunk propensity
+            // path. The ratio is published per fold so users can audit the
+            // propensity nuisance across the cross-fit splits.
+            local _hddid_s1_lambda_ratio_`_k' = `lambda_ps' / sqrt(log(`p' + `q') / `_n_train_ps')
+
+            // Refit cvlassologit at lopt and post the result so predict can run.
             tempname _eb_propensity
+            capture _hddid_run_rng_isolated `seed' ///
+                `_hddid_subcmd_prefix' cvlassologit, lopt postresults
+            if _rc != 0 {
+                di as error "{bf:hddid}: cvlassologit, lopt postresults failed in fold `_k' (rc=" _rc ")"
+                di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
+                di as error "  cv optimum: lopt=" %9.6f `lambda_ps' ", loptid=`_ps_loptid', lcount=`_ps_nlambda'"
+                di as error "  Reason: refitting at the CV-optimal lambda failed; paper Assumption 8's required Stage-1 nuisance estimator is unavailable in this fold and no substitute is published."
+                di as error "  Common causes: near-separation in the training sample at lopt."
+                exit _rc
+            }
+            matrix `_eb_propensity' = e(beta)
+            local lambda_ps = e(lambda)
+
             tempvar _pihat_tmp
-            local _ps_lambda_hi = `lambda_ps' + max(`lambda_ps' * 0.1, 1e-8)
-
-            if `_ps_missing_lopt' {
-                capture _hddid_run_rng_isolated `seed' ///
-                    `_hddid_subcmd_prefix' lassologit `treat' `w_vars' ///
-                    if `_propensity_train_if', ///
-                    lambda(`_ps_lambda_hi' `lambda_ps') noprogressbar
-                if _rc != 0 {
-                    di as error "{bf:hddid}: missing-lopt propensity fallback failed in fold `_k' (rc=" _rc ")"
-                    di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
-                    di as error "  cvlassologit returned missing {bf:e(lopt)} despite finite {bf:e(lmax)}=" %9.6f `_ps_lmax'
-                    di as error "  Tried two-point {bf:lassologit} path at lambda = (" %9.6f `_ps_lambda_hi' ", " %9.6f `lambda_ps' ") to recover usable lasso coefficients for prediction"
-                    exit _rc
-                }
-                tempname _eb_propensity_path
-                matrix `_eb_propensity_path' = e(betas)
-                local _ps_path_rows = rowsof(`_eb_propensity_path')
-                local _ps_path_cols = colsof(`_eb_propensity_path')
-                if `_ps_path_rows' < 2 | `_ps_path_cols' != `_ps_ncols' {
-                    di as error "{bf:hddid}: missing-lopt propensity fallback returned an unexpected coefficient path in fold `_k'"
-                    di as error "  Expected at least 2 x `=_ps_ncols'' coefficients, got `_ps_path_rows' x `_ps_path_cols'"
-                    exit 498
-                }
-                matrix `_eb_propensity' = `_eb_propensity_path'[`_ps_path_rows', 1...]
-                matrix colnames `_eb_propensity' = `w_vars' _cons
-                tempvar _pihat_xb
-                quietly matrix score double `_pihat_xb' = `_eb_propensity' if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                quietly gen double `_pihat_tmp' = invlogit(`_pihat_xb') if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                drop `_pihat_xb'
-                di as text "{bf:hddid} note: fold `_k' recovered the propensity fit after cvlassologit omitted {bf:e(lopt)}"
-                di as text "  Using recovered two-point lassologit predictions from the finite lambda boundary at " %9.6f `lambda_ps'
-            }
-            else if `_ps_hit_lmin' {
-                // lassologit always runs a post-logit step for a single lambda.
-                // When the CV optimum is the smallest lambda on the path, that
-                // post-logit can late-crash under (near-)separation even though
-                // the lasso coefficients themselves are usable for prediction.
-                capture _hddid_run_rng_isolated `seed' ///
-                    `_hddid_subcmd_prefix' lassologit `treat' `w_vars' ///
-                    if `_propensity_train_if', ///
-                    lambda(`_ps_lambda_hi' `lambda_ps') noprogressbar
-                if _rc != 0 {
-                    di as error "{bf:hddid}: lower-boundary propensity fallback failed in fold `_k' (rc=" _rc ")"
-                    di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
-                    di as error "  cv optimum: lopt=" %9.6f `lambda_ps' ", loptid=`_ps_loptid', grid size=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-                    di as error "  Tried two-point {bf:lassologit} path at lambda = (" %9.6f `_ps_lambda_hi' ", " %9.6f `lambda_ps' ") to bypass the single-lambda post-logit crash"
-                    exit _rc
-                }
-                tempname _eb_propensity_path
-                matrix `_eb_propensity_path' = e(betas)
-                local _ps_path_rows = rowsof(`_eb_propensity_path')
-                local _ps_path_cols = colsof(`_eb_propensity_path')
-                if `_ps_path_rows' < 2 | `_ps_path_cols' != `_ps_ncols' {
-                    di as error "{bf:hddid}: lower-boundary propensity fallback returned an unexpected coefficient path in fold `_k'"
-                    di as error "  Expected at least 2 x `=_ps_ncols'' coefficients, got `_ps_path_rows' x `_ps_path_cols'"
-                    exit 498
-                }
-                matrix `_eb_propensity' = `_eb_propensity_path'[`_ps_path_rows', 1...]
-                matrix colnames `_eb_propensity' = `w_vars' _cons
-                tempvar _pihat_xb
-                quietly matrix score double `_pihat_xb' = `_eb_propensity' if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                quietly gen double `_pihat_tmp' = invlogit(`_pihat_xb') if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                drop `_pihat_xb'
-                di as text "{bf:hddid} note: fold `_k' recovered the propensity fit after the CV optimum hit the lambda floor"
-                di as text "  Using recovered lower-boundary lassologit predictions at lambda = " %9.6f `lambda_ps'
-            }
-            else {
-                capture _hddid_run_rng_isolated `seed' ///
-                    `_hddid_subcmd_prefix' cvlassologit, lopt postresults
-                if _rc != 0 {
-                    local _ps_post_rc = _rc
-                    capture _hddid_run_rng_isolated `seed' ///
-                        `_hddid_subcmd_prefix' lassologit `treat' `w_vars' ///
-                        if `_propensity_train_if', ///
-                        lambda(`_ps_lambda_hi' `lambda_ps') noprogressbar
-                    if _rc != 0 {
-                        di as error "{bf:hddid}: postresults recovery failed in fold `_k' (postresults rc=`_ps_post_rc', fallback rc=" _rc ")"
-                        di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
-                        di as error "  cv optimum: lopt=" %9.6f `lambda_ps' ", loptid=`_ps_loptid', lmax=" %9.6f `_ps_lmax'
-                        di as error "  Tried two-point {bf:lassologit} path at lambda = (" %9.6f `_ps_lambda_hi' ", " %9.6f `lambda_ps' ") to recover usable lasso coefficients for prediction"
-                        exit `_ps_post_rc'
-                    }
-                    tempname _eb_propensity_path
-                    matrix `_eb_propensity_path' = e(betas)
-                    local _ps_path_rows = rowsof(`_eb_propensity_path')
-                    local _ps_path_cols = colsof(`_eb_propensity_path')
-                    if `_ps_path_rows' < 2 | `_ps_path_cols' != `_ps_ncols' {
-                        di as error "{bf:hddid}: postresults recovery returned an unexpected coefficient path in fold `_k'"
-                        di as error "  Expected at least 2 x `=_ps_ncols'' coefficients, got `_ps_path_rows' x `_ps_path_cols'"
-                        exit 498
-                    }
-                    matrix `_eb_propensity' = `_eb_propensity_path'[`_ps_path_rows', 1...]
-                    matrix colnames `_eb_propensity' = `w_vars' _cons
-                    tempvar _pihat_xb
-                    quietly matrix score double `_pihat_xb' = `_eb_propensity' if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                    quietly gen double `_pihat_tmp' = invlogit(`_pihat_xb') if `_propensity_foldvar' == `_k' & `_propensity_touse'
-                    drop `_pihat_xb'
-                    di as text "{bf:hddid} note: fold `_k' recovered the propensity fit after {bf:cvlassologit, lopt postresults} failed"
-                    di as text "  Using recovered two-point lassologit predictions at lambda = " %9.6f `lambda_ps'
-                }
-                else {
-                    matrix `_eb_propensity' = e(beta)
-                    local lambda_ps = e(lambda)
-
-                    // lassologit's predict cannot overwrite an existing variable.
-                    capture `_hddid_subcmd_prefix' predict double `_pihat_tmp', pr
-                    if _rc != 0 {
-                        di as error "{bf:hddid}: predict failed in fold `_k' (rc=" _rc ")"
-                        di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
-                        di as error "  cv optimum: lopt=" %9.6f `lambda_ps' ", loptid=`_ps_loptid', lmax=" %9.6f `_ps_lmax'
-                        exit _rc
-                    }
-                }
+            capture `_hddid_subcmd_prefix' predict double `_pihat_tmp', pr
+            if _rc != 0 {
+                di as error "{bf:hddid}: predict (propensity) failed in fold `_k' (rc=" _rc ")"
+                di as error "  training observations: total=`_n_train_ps', treated=`_n1_train_ps', control=`_n0_train_ps'"
+                di as error "  cv optimum: lopt=" %9.6f `lambda_ps' ", loptid=`_ps_loptid'"
+                exit _rc
             }
             quietly replace `_pihat' = `_pihat_tmp' if `_propensity_foldvar' == `_k' & `_propensity_touse'
             drop `_pihat_tmp'
         }
 
         if "`verbose'" != "" {
-            if !`_ps_constant_w' & !`_ps_hit_lmax' {
+            if `_ps_constant_w' {
+                di as text "  Fold `_k': propensity score - intercept-only model (constant W), non-zero = 0/`_ps_ncols'"
+            }
+            else {
                 local _ps_ncols = colsof(`_eb_propensity')
                 forvalues _j = 1/`_ps_ncols' {
                     if `_eb_propensity'[1, `_j'] != 0 {
                         local _nz_count = `_nz_count' + 1
                     }
                 }
-            }
-            if `_ps_constant_w' {
-                di as text "  Fold `_k': propensity score - intercept-only fallback (constant W), non-zero = 0/`_ps_ncols'"
-            }
-            else {
                 di as text "  Fold `_k': propensity score - lambda = " %10.6f `lambda_ps' ", non-zero = `_nz_count'/`_ps_ncols'"
             }
         }
@@ -2264,16 +2227,20 @@ program define _hddid_estimate, eclass sortpreserve
             quietly replace `_pihat' = `pihat' if `_fold' == `_k' & `_fold_touse'
             quietly replace `_phi1hat' = `phi1hat' if `_fold' == `_k' & `touse'
             quietly replace `_phi0hat' = `phi0hat' if `_fold' == `_k' & `touse'
+            // No internally estimated lambda for the nofirst path; the
+            // diagnostic ratio is undefined and published as missing so the
+            // aggregated matrix carries that fact in machine-readable form.
+            local _hddid_s1_lambda_ratio_`_k' = .
         }
 
-    // The paper's AIPW score is defined observation-wise on the common score
-    // sample. Internally estimated pihat must therefore be present on every
-    // such row before the overlap trim decides which rows remain retained.
+    // The AIPW score is defined observation-wise on the common score sample.
+    // Internally estimated pihat must therefore be present on every such row
+    // before the overlap trim decides which rows remain retained.
         if "`nofirst'" == "" {
             quietly count if `_fold' == `_k' & `_pihat_domain_touse' & missing(`_pihat')
             if r(N) > 0 {
                 di as error "{bf:hddid}: fold `_k' returned missing propensity score predictions before overlap trimming"
-                di as error "  Reason: equations (2.5) and (3.1) require a realized propensity on every common-score row before the retained-sample AIPW score is formed"
+                di as error "  Reason: the doubly robust AIPW score requires a realized propensity on every common-score row before the retained-sample score is formed"
                 di as error "  Missing internally estimated {bf:pihat} is broken first-stage nuisance output, not an extreme-overlap row to trim away"
                 exit 498
             }
@@ -2331,25 +2298,23 @@ program define _hddid_estimate, eclass sortpreserve
 
             if `_n1_train_outcome' == 0 {
                 di as error "{bf:hddid}: first-stage treated-outcome training sample is empty in fold `_k'"
-                di as error "  Reason: equations (2.5) and (3.1) require a realized treated-arm outcome nuisance on the fold-external common score sample before the AIPW score is formed"
+                di as error "  Reason: the doubly robust AIPW score requires a realized treated-arm outcome nuisance on the fold-external common score sample before the score is formed"
                 di as error "  No treated common-score rows remain outside fold `_k'; provide more nonmissing treated {bf:`depvar'} rows, reduce k(), or use {bf:nofirst} with valid supplied outcome nuisances"
                 exit 2000
             }
 
             if `_n0_train_outcome' == 0 {
                 di as error "{bf:hddid}: first-stage control-outcome training sample is empty in fold `_k'"
-                di as error "  Reason: equations (2.5) and (3.1) require a realized control-arm outcome nuisance on the fold-external common score sample before the AIPW score is formed"
+                di as error "  Reason: the doubly robust AIPW score requires a realized control-arm outcome nuisance on the fold-external common score sample before the score is formed"
                 di as error "  No control common-score rows remain outside fold `_k'; provide more nonmissing control {bf:`depvar'} rows, reduce k(), or use {bf:nofirst} with valid supplied outcome nuisances"
                 exit 2000
             }
 
-            // For a constant arm-specific training outcome, cvlasso cannot
-            // select a unique lopt. In that case the nuisance prediction is
-            // just the fold-external sample mean. The same intercept-only
-            // fallback is required when the fold-external W=(X,Z) design is
-            // constant, because cvlasso then has no varying regressors and
-            // late-fails with a raw constant-design error even though the
-            // nuisance target is still well defined.
+            // When the arm-specific training outcome is constant, cvlasso
+            // cannot select a unique lopt; the nuisance prediction defaults
+            // to the fold-external sample mean. The same intercept-only
+            // fallback applies when the fold-external W=(X,Z) design is
+            // constant, because cvlasso then has no varying regressors.
             quietly summarize `depvar' ///
                 if `_fold' != `_k' & `treat' == 1 & `touse', meanonly
             local _phi1_mean = r(mean)
@@ -2379,14 +2344,22 @@ program define _hddid_estimate, eclass sortpreserve
                     di as error "{bf:hddid}: first-stage treated-outcome training sample too small in fold `_k'"
                     di as error "  training observations: treated=`_n1_train_outcome', required >= 3 for a non-constant outcome fit"
                     di as error "  Current {bf:cvlasso, nfolds(`stage1_outcome_nfolds') lopt} still needs at least `outcome_min_total' training observations before a non-constant treated-outcome fit is attempted"
-                    di as error "  Direct Stata runtime evidence shows the non-constant path still runs at 3 rows but not at 2, so this guard uses that concrete boundary instead of a stricter per-fold heuristic"
                     di as error "  Increase sample size, reduce k(), or use nofirst with user-supplied first-stage outcomes"
                     exit 2000
+                }
+                // lglmnet rescales the CV lambda grid so lmax = max|X'y|/n.
+                // Without lglmnet the default cvlasso grid (lmax=2*max|X'y|)
+                // sits ~2n times higher and CV chooses lambda that over-shrinks
+                // Phi1 to a near-constant prediction.
+                // P1-b: stage1penalty(partial) leaves psi(Z) unpenalized.
+                local _stage1_notpen_phi1 ""
+                if "`stage1penalty'" == "partial" {
+                    local _stage1_notpen_phi1 "notpen(`zb_varlist')"
                 }
                 capture _hddid_run_rng_isolated `seed' ///
                     `_hddid_subcmd_prefix' cvlasso `depvar' `w_vars' ///
                     if `_fold' != `_k' & `treat' == 1 & `touse', ///
-                    nfolds(`stage1_outcome_nfolds') lopt
+                    nfolds(`stage1_outcome_nfolds') lopt lglmnet `_stage1_notpen_phi1'
                 if _rc != 0 {
                     di as error "{bf:hddid}: cvlasso (treated) " ///
                         "failed in fold `_k' (rc=" _rc ")"
@@ -2427,14 +2400,19 @@ program define _hddid_estimate, eclass sortpreserve
                     di as error "{bf:hddid}: first-stage control-outcome training sample too small in fold `_k'"
                     di as error "  training observations: control=`_n0_train_outcome', required >= 3 for a non-constant outcome fit"
                     di as error "  Current {bf:cvlasso, nfolds(`stage1_outcome_nfolds') lopt} still needs at least `outcome_min_total' training observations before a non-constant control-outcome fit is attempted"
-                    di as error "  Direct Stata runtime evidence shows the non-constant path still runs at 3 rows but not at 2, so this guard uses that concrete boundary instead of a stricter per-fold heuristic"
                     di as error "  Increase sample size, reduce k(), or use nofirst with user-supplied first-stage outcomes"
                     exit 2000
+                }
+                // lglmnet for Phi0; same rescaling rationale as Phi1.
+                // P1-b: stage1penalty(partial) leaves psi(Z) unpenalized.
+                local _stage1_notpen_phi0 ""
+                if "`stage1penalty'" == "partial" {
+                    local _stage1_notpen_phi0 "notpen(`zb_varlist')"
                 }
                 capture _hddid_run_rng_isolated `seed' ///
                     `_hddid_subcmd_prefix' cvlasso `depvar' `w_vars' ///
                     if `_fold' != `_k' & `treat' == 0 & `touse', ///
-                    nfolds(`stage1_outcome_nfolds') lopt
+                    nfolds(`stage1_outcome_nfolds') lopt lglmnet `_stage1_notpen_phi0'
                 if _rc != 0 {
                     di as error "{bf:hddid}: cvlasso (control) " ///
                         "failed in fold `_k' (rc=" _rc ")"
@@ -2447,7 +2425,7 @@ program define _hddid_estimate, eclass sortpreserve
             }
         }
 
-        // The current implementation trims the second stage at [0.01, 0.99].
+        // Overlap trimming: exclude observations with propensity outside [0.01, 0.99].
         quietly replace `_valid' = 1 if `_fold' == `_k' & `touse'
         quietly replace `_valid' = 0 if `_fold' == `_k' & `touse' & ///
             (`_pihat' > 0.99 | `_pihat' < 0.01)
@@ -2464,9 +2442,8 @@ program define _hddid_estimate, eclass sortpreserve
 
         // Guard the second-stage CV call after trimming because cvlasso still
         // needs enough retained evaluation observations to split into folds.
-        // Once the fold-aligned AIPW nuisances are in hand, neither the paper
-        // nor the R reference requires both treatment arms to remain inside
-        // every retained evaluation fold.
+        // Once the fold-aligned AIPW nuisances are in hand, both treatment arms
+        // need not remain inside every retained evaluation fold.
         quietly count if `_fold' == `_k' & `touse' & `_valid' == 1
         local _n_valid = r(N)
         if `_n_valid' == 0 {
@@ -2479,7 +2456,7 @@ program define _hddid_estimate, eclass sortpreserve
                 (missing(`_phi1hat') | missing(`_phi0hat'))
             if r(N) > 0 {
                 di as error "{bf:hddid}: fold `_k' returned missing phi1hat()/phi0hat() predictions on retained overlap rows before AIPW score construction"
-                di as error "  Reason: equations (2.5) and (3.1) require realized outcome nuisances on every retained row before the retained-sample AIPW score is formed"
+                di as error "  Reason: the doubly robust AIPW score requires realized outcome nuisances on every retained row before the retained-sample score is formed"
                 di as error "  Missing internally estimated {bf:phi1hat}/{bf:phi0hat} is broken first-stage nuisance output, not a late score-construction failure"
                 exit 498
             }
@@ -2493,7 +2470,7 @@ program define _hddid_estimate, eclass sortpreserve
             missing(`_rho')
         if r(N) > 0 {
             di as error "{bf:hddid}: fold `_k' produced missing/nonfinite AIPW weights before the second-stage fit"
-            di as error "  Reason: the paper's DR score uses rho_i = (D_i - pi_i) / (pi_i * (1 - pi_i)) on the retained evaluation sample"
+            di as error "  Reason: the DR score uses rho_i = (D_i - pi_i) / (pi_i * (1 - pi_i)) on the retained evaluation sample"
             di as error "  Check supplied or estimated propensity scores for near-boundary overflow in this fold"
             exit 3351
         }
@@ -2508,9 +2485,18 @@ program define _hddid_estimate, eclass sortpreserve
             missing(`_newy')
         if r(N) > 0 {
             di as error "{bf:hddid}: fold `_k' produced missing/nonfinite AIPW scores before the second-stage fit"
-            di as error "  Reason: equation (3.1) requires a finite retained-sample score S_i = rho_i * (Delta Y_i - (1-pi_i)Phi_1i - pi_i Phi_0i)"
+            di as error "  Reason: the AIPW score S_i = rho_i * (Delta Y_i - (1-pi_i)Phi_1i - pi_i Phi_0i) must be finite on the retained sample"
             di as error "  Check supplied or estimated nuisance values and outcome scale for overflow/underflow in this fold"
             exit 3351
+        }
+
+        if "`verbose'" != "" {
+            quietly sum `_newy' if `_fold' == `_k' & `touse' & `_valid' == 1
+            di as text "  Fold `_k': newy n=" r(N) "  mean=" %9.4f r(mean) "  sd=" %9.4f r(sd) "  [min=" %9.4f r(min) ", max=" %9.4f r(max) "]"
+            quietly sum `_rho' if `_fold' == `_k' & `touse' & `_valid' == 1
+            di as text "  Fold `_k': rho  n=" r(N) "  mean=" %9.4f r(mean) "  sd=" %9.4f r(sd) "  [min=" %9.4f r(min) ", max=" %9.4f r(max) "]"
+            quietly sum `_pihat' if `_fold' == `_k' & `touse' & `_valid' == 1
+            di as text "  Fold `_k': Pi   n=" r(N) "  mean=" %9.4f r(mean) "  sd=" %9.4f r(sd) "  [min=" %9.4f r(min) ", max=" %9.4f r(max) "]"
         }
 
         // Record realized valid counts for the posted fold summary.
@@ -2682,8 +2668,9 @@ program define _hddid_estimate, eclass sortpreserve
     }
 
     // Keep the intercept in the z0 basis because stage-2 preparation still
-    // estimates a separate a0 there, even though the public gdebias surface
-    // later reports only the omitted-intercept z-varying block.
+    // estimates a separate a0 there; the public e(gdebias) reports the
+    // centered nonparametric block, while e(a0) carries the intercept so the
+    // full f(z) level is e(a0) + e(gdebias).
     // q()/z0() dimensions are constrained by Stata's hard matrix limit,
     // not by the user's current session matsize setting.
     local _ms_needed = max(`qq', `q_full')
@@ -2701,17 +2688,9 @@ program define _hddid_estimate, eclass sortpreserve
     mata: _hddid_store_z0_basis("`z0_list'", "`method_lc'", `q', ///
         "`__hddid_zbasispredict'", `tri_zmin', `tri_zmax')
 
-    // Fold IDs are fixed already; re-sort only to give stage-2/CLIME a
-    // deterministic row order inside each evaluation fold. The primary key
-    // must come from the retained design variables so a pure nuisance rewrite
-    // that leaves the estimator's design problem unchanged cannot perturb
-    // downstream CV through incidental row-order changes.
-    // These remaining Stata lasso paths derive their inner validation folds from the current row order after this retained-fold sort.
-    // `_newy' only breaks ties among otherwise identical design points inside
-    // a fold.
-    // [AUDIT FIX] Sorting by x within each fold created non-random inner CV
-    // splits for cvlasso, biasing the stage-2 lambda selection. Use a random
-    // sort within each fold instead, seeded for reproducibility.
+    // Fold IDs are fixed; re-sort to give stage-2/CLIME a random row order
+    // inside each evaluation fold. A seeded random sort prevents non-random
+    // inner CV splits that would bias lambda selection.
     tempvar _rsort
     if `seed' >= 0 {
         local _rng_before `c(rngstate)'
@@ -2759,6 +2738,10 @@ program define _hddid_estimate, eclass sortpreserve
                     strtoreal(st_local("_k")), ///
                     strtoreal(st_local("_stage2_level")))
             }
+            // Stage-2 lambda ratio is undefined for the constant-DR shortcut
+            // because the lasso fit reduces to the analytic intercept-only
+            // solution; record the missing diagnostic before continuing.
+            local _hddid_s2_lambda_ratio_`_k' = .
             continue
         }
 
@@ -2782,7 +2765,7 @@ program define _hddid_estimate, eclass sortpreserve
         if `_sieve_rank' < `_sieve_q1' {
             di as error "{bf:hddid}: fold `_k' has a rank-deficient sieve basis after trimming"
             di as error "  Basis rank=`_sieve_rank' < q+1=`_sieve_q1'; n_valid=`_n_valid', singular_dirs=`_sieve_singdirs'"
-            di as error "  Reason: the paper's sieve projection requires a full-column-rank basis within each evaluation fold"
+            di as error "  Reason: the sieve projection requires a full-column-rank basis within each evaluation fold"
             di as error "  Hint: reduce q(), change method(), or ensure richer fold-level support in z()"
             exit 498
         }
@@ -2797,35 +2780,51 @@ program define _hddid_estimate, eclass sortpreserve
             exit 2000
         }
         // The second stage leaves sieve terms unpenalized and penalizes only X,
-        // matching the partially linear split used in the paper and R code.
-        // Do not request cvlasso's lopt postresults here. When the
-        // unpenalized sieve block is legitimately estimated at zero,
-        // postresults can late-fail even though the CV run still leaves a
-        // usable e(lopt) for the paper's stage-2 fit.
+        // matching the partially linear model tau(X,Z) = X'beta + f(Z).
+        // Use lglmnet parameterization so the CV lambda grid uses
+        // lmax = max|X'y|/n, the conventional rate matching Assumption 9's
+        // lambda ~ sqrt(log(p)/n) order of magnitude.
         capture _hddid_run_rng_isolated `seed' ///
             `_hddid_subcmd_prefix' cvlasso `_newy' `w_vars' if `_eval_s2', ///
-            nfolds(`stage2_nfolds') notpen(`zb_varlist')
-        local _stage2_cvlasso_rc = _rc
-        capture `_hddid_subcmd_prefix' _hddid_cvlasso_pick_lambda, ///
-            context("cvlasso (second-stage) in fold `_k'")
-        local _stage2_lambda_rc = _rc
-        if `_stage2_lambda_rc' != 0 {
-            di as error "{bf:hddid}: cvlasso (second-stage) failed in fold `_k' (rc=" `_stage2_cvlasso_rc' ")"
+            nfolds(`stage2_nfolds') notpen(`zb_varlist') lglmnet
+        if _rc != 0 {
+            di as error "{bf:hddid}: cvlasso (second-stage) failed in fold `_k' (rc=" _rc ")"
             di as error "  n_valid=`_n_valid', p+q=`=`p'+`q''"
-            exit cond(`_stage2_cvlasso_rc' != 0, `_stage2_cvlasso_rc', `_stage2_lambda_rc')
+            di as error "  Reason: paper Eq (3.1) requires the cross-validated lasso solution; no substitute estimator is published when CV fails."
+            di as error "  Common causes: extreme rho/newy outliers, propensity-trim leaves a flat CV curve, or the retained sample lacks variation in newy."
+            exit _rc
         }
-        local lambda_opt = r(lambda)
-        local _stage2_lambda_source "`r(source)'"
-        if "`_stage2_lambda_source'" == "grid_last" & "`verbose'" != "" {
-            di as text "  Fold `_k': second-stage has flat CV loss; using smallest lambda = " %10.6f `lambda_opt'
+
+        local lambda_opt = e(lopt)
+        local _stage2_loptid = e(loptid)
+        local _stage2_lmax = e(lmax)
+        local _stage2_lmin = e(lmin)
+        local _stage2_nlambda = e(lcount)
+        if missing(`lambda_opt') | `lambda_opt' <= 0 {
+            di as error "{bf:hddid}: cvlasso (second-stage) returned an unusable e(lopt) in fold `_k'"
+            di as error "  e(lopt)=" `lambda_opt' ", e(loptid)=`_stage2_loptid', e(lcount)=`_stage2_nlambda'"
+            di as error "  e(lmin)=" %12.6e `_stage2_lmin' ", e(lmax)=" %12.6e `_stage2_lmax'
+            di as error "  n_valid=`_n_valid', p+q=`=`p'+`q''"
+            di as error "  Reason: cross-validation failed to identify a finite positive optimal lambda for paper Eq (3.1); no substitute estimator is published."
+            di as error "  Common causes: a flat CV curve from extreme newy outliers, or a degenerate retained sample after propensity trimming."
+            exit 498
         }
+
+        // Stage-2 lambda ratio diagnostic: paper Assumption 9 requires
+        // lambda ~ sqrt(log(p+q) / n_valid). The ratio is published per
+        // fold so users can audit whether CV picked a lambda consistent
+        // with that rate, especially when CV lopt lands near the grid
+        // boundary on small folds with extreme newy outliers.
+        local _hddid_s2_lambda_ratio_`_k' = `lambda_opt' / sqrt(log(`p' + `q') / `_n_valid')
 
         // Zero-valued unpenalized sieve coefficients are a legal stage-2
         // solution. Tighten tolzero() so lasso2 does not misclassify that case
         // as "unpenalized vars missing from selected vars".
+        // lglmnet must mirror the cvlasso parameterization so lambda_opt from
+        // e(lopt) has a consistent meaning across CV and final fit.
         capture _hddid_run_rng_isolated `seed' ///
             `_hddid_subcmd_prefix' lasso2 `_newy' `w_vars' if `_eval_s2', ///
-            lambda(`lambda_opt') notpen(`zb_varlist') postall tolzero(1e-20)
+            lambda(`lambda_opt') notpen(`zb_varlist') postall tolzero(1e-20) lglmnet
         if _rc != 0 {
             di as error "{bf:hddid}: lasso2 (second-stage) failed in fold `_k' (rc=" _rc ")"
             exit _rc
@@ -2860,6 +2859,22 @@ program define _hddid_estimate, eclass sortpreserve
                 sum(st_matrix(st_local("__hddid_betahat_p")) :!= 0), ///
                 sum(st_matrix(st_local("__hddid_gammahat_q")) :!= 0), ///
                 st_numscalar(st_local("__hddid_a0")))
+            // [DIAG] dump first 6 components of betahat_p and list nonzero X
+            // indices so we can tell whether x1 is actually selected at this
+            // lambda vs getting shrunk to zero by Stata lasso2's coordinate
+            // descent (which should mirror glmnet at matching lambda).
+            mata: _bp = st_matrix(st_local("__hddid_betahat_p"))
+            mata: printf("  [DIAG] betahat_p[1..6] = %10.6f %10.6f %10.6f %10.6f %10.6f %10.6f\n", _bp[1], _bp[2], _bp[3], _bp[4], _bp[5], _bp[6])
+            mata: _sel = selectindex(_bp :!= 0)
+            mata: st_local("_diag_sel", invtokens(strofreal(_sel)))
+            di as text "  [DIAG] nonzero x indices (1-based): `_diag_sel'"
+            // [DIAG] correlation newy vs x1..x6 in the eval fold, to see if
+            // Stata stage-1 over-subtracted x1..x3 signal before stage-2 lasso.
+            forvalues _jj = 1/6 {
+                local _xname : word `_jj' of `w_vars'
+                quietly corr `_newy' `_xname' if `_eval_s2'
+                di as text "  [DIAG] corr(newy, x`_jj' = `_xname') = " %9.4f r(rho)
+            }
         }
 
         // Estimate one projection row per full-basis term, including the
@@ -2955,8 +2970,27 @@ program define _hddid_estimate, eclass sortpreserve
         if `"`_hddid_absorbed_x'"' != "" {
             di as error "{bf:hddid}: fold `_k' has x() columns fully absorbed by the retained sieve basis"
             di as error "  Absorbed x() variable(s): {bf:`_hddid_absorbed_x'}"
-            di as error "  Reason: on that evaluation fold, those covariates lie exactly in the span of the full sieve basis used for {it:f(z)}, so the paper's X'beta + f(z) decomposition is not uniquely identified"
+            di as error "  Reason: on that evaluation fold, those covariates lie exactly in the span of the full sieve basis used for {it:f(z)}, so the X'beta + f(z) decomposition is not uniquely identified"
             di as error "  Drop the sieve-alias covariate, change q()/method(), or modify z()/x() so the parametric and nonparametric components are separately identified"
+            exit 498
+        }
+
+        // Pre-CLIME fold-size guard. Paper Eq (4.2) defines the CLIME
+        // estimator as the LP solution column-by-column; for the LP grid
+        // search to be informative the fold must hold at least p+1
+        // observations (so the perturbed empirical covariance has a
+        // nontrivial direction beyond the diagonal floor) and at least
+        // 2*clime_nfolds_cv_requested observations (so each CV fold can
+        // hold two observations). Below either threshold the LP either
+        // collapses to the diagonal or produces a degenerate symmetric
+        // precision matrix, both of which would substitute a non-paper
+        // estimator. Fail-close so the user can adjust k() or n.
+        local _clime_min_per_fold = max(`p' + 1, 2 * `clime_nfolds_cv_requested')
+        if `p' > 1 & `_n_valid' < `_clime_min_per_fold' {
+            di as error "{bf:hddid}: fold `_k' has too few retained observations for CLIME debiasing"
+            di as error "  n_valid=`_n_valid', p=`p', clime_nfolds_cv_requested=`clime_nfolds_cv_requested', clime_min_per_fold=`_clime_min_per_fold'"
+            di as error "  Reason: paper Eq (4.2) requires the LP-based CLIME precision matrix; with n_valid < max(p+1, 2*clime_nfolds_cv_requested) the CV-LP path either collapses to the diagonal floor or produces a degenerate Theta. {bf:hddid} fails closed rather than substituting a non-paper precision matrix."
+            di as error "  Reduce k(), increase the sample, or relax the propensity overlap before retrying."
             exit 498
         }
 
@@ -3015,8 +3049,32 @@ program define _hddid_estimate, eclass sortpreserve
         strtoreal(st_local("_hddid_use_active_boot_seed")))
 
     tempname _b _V _xdebias _gdebias _stdx _stdg _tc _CIpoint _CIuniform
+    tempname _tc_sup _CIuniform_sup
     mata: _hddid_post_results("`_b'", "`_V'", "`_xdebias'", "`_gdebias'", ///
-        "`_stdx'", "`_stdg'", "`_tc'", "`_CIpoint'", "`_CIuniform'", `qq')
+        "`_stdx'", "`_stdg'", "`_tc'", "`_CIpoint'", "`_CIuniform'", `qq', ///
+        "`_tc_sup'", "`_CIuniform_sup'")
+
+    // ==========================================================================
+    // Undo canonical x-permutation on parametric outputs.
+    // ----------------------------------------------------------------------
+    // Internal Stage-2 lasso, debiasing and CLIME all run in the canonical
+    // covariate order produced by `_hddid_canonical_x_order' at the top of this
+    // program (matrix `__hddid_xord_main'). The aggregated xdebias/stdx/V/b
+    // matrices returned above therefore live in canonical coordinates, but
+    // `_hddid_publish_results' attaches column stripes from `xvars(`x_user')'
+    // (the user's original ordering). Re-permute now so the j-th published
+    // coordinate is the coefficient for the j-th user covariate.
+    // ==========================================================================
+    capture confirm matrix `__hddid_xord_main'
+    if _rc == 0 {
+        mata: _hddid_apply_inverse_xord("`_b'", "`_V'", "`_xdebias'", ///
+            "`_stdx'", "`_CIpoint'", "`__hddid_xord_main'")
+    }
+    else {
+        di as error "{bf:hddid}: internal canonical x-order permutation matrix {bf:`__hddid_xord_main'} not found before publishing"
+        di as error "  Reason: published e(b)/e(xdebias)/e(stdx)/e(V)/e(CIpoint) coordinates must be re-permuted to match {bf:xvars(`x_user')} column stripes"
+        exit 498
+    }
 
     // Aggregate gammabar and a0 across folds for predict support.
     tempname _agg_total_n
@@ -3044,24 +3102,54 @@ program define _hddid_estimate, eclass sortpreserve
 
     local _hddid_n_per_fold_list ""
     local _hddid_clime_eff_list ""
+    local _hddid_s1_ratio_list ""
+    local _hddid_s2_ratio_list ""
     forvalues _kk = 1/`k' {
         local _hddid_n_var "n_eval_`_kk'"
         local _hddid_clime_var "clime_nfolds_cv_effective_`_kk'"
+        local _hddid_s1_ratio_var "_hddid_s1_lambda_ratio_`_kk'"
+        local _hddid_s2_ratio_var "_hddid_s2_lambda_ratio_`_kk'"
         local _hddid_n_per_fold_item ``_hddid_n_var''
         local _hddid_clime_eff_item ``_hddid_clime_var''
+        local _hddid_s1_ratio_item ``_hddid_s1_ratio_var''
+        local _hddid_s2_ratio_item ``_hddid_s2_ratio_var''
+        if `"`_hddid_s1_ratio_item'"' == "" {
+            local _hddid_s1_ratio_item "."
+        }
+        if `"`_hddid_s2_ratio_item'"' == "" {
+            local _hddid_s2_ratio_item "."
+        }
         local _hddid_n_per_fold_list ///
             `"`_hddid_n_per_fold_list' `_hddid_n_per_fold_item'"'
         local _hddid_clime_eff_list ///
             `"`_hddid_clime_eff_list' `_hddid_clime_eff_item'"'
+        local _hddid_s1_ratio_list ///
+            `"`_hddid_s1_ratio_list' `_hddid_s1_ratio_item'"'
+        local _hddid_s2_ratio_list ///
+            `"`_hddid_s2_ratio_list' `_hddid_s2_ratio_item'"'
     }
     local _hddid_firststage_mode "internal"
     if "`nofirst'" != "" {
         local _hddid_firststage_mode "nofirst"
     }
 
+    // P2-b: defensive re-assertion before forwarding stage1penalty to the
+    // publisher. The primary default is installed at lines 479-481, but any
+    // future refactor that clears the local between the default and this
+    // call would otherwise emit stage1penalty() as an empty-parenthesis
+    // option and be rejected by the publisher's syntax parser with rc=198.
+    // The publisher's own optional-arg block + internal default handle the
+    // empty-local path too, but this re-assertion keeps the on-wire value
+    // nonblank so the failure mode is impossible to reach from either side.
+    if `"`stage1penalty'"' == "" {
+        local stage1penalty "full"
+    }
+
     _hddid_publish_results, ///
         b(`_b') ///
         v(`_V') ///
+        tcsup(`_tc_sup') ///
+        ciuniformsup(`_CIuniform_sup') ///
         xdebias(`_xdebias') ///
         gdebias(`_gdebias') ///
         stdx(`_stdx') ///
@@ -3087,6 +3175,8 @@ program define _hddid_estimate, eclass sortpreserve
         zgrid(`z0_list') ///
         nperfold(`_hddid_n_per_fold_list') ///
         climeeff(`_hddid_clime_eff_list') ///
+        lam1ratio(`_hddid_s1_ratio_list') ///
+        lam2ratio(`_hddid_s2_ratio_list') ///
         method(`method') ///
         depvarrole(`depvar') ///
         treatvar(`treat') ///
@@ -3099,7 +3189,8 @@ program define _hddid_estimate, eclass sortpreserve
         outcome(`stage1_outcome_nfolds') ///
         seed(`seed') ///
         zsupportmin(`tri_zmin') ///
-        zsupportmax(`tri_zmax')
+        zsupportmax(`tri_zmax') ///
+        stage1penalty(`stage1penalty')
 
     quietly _hddid_load_display_sidecar, path("`_hddid_displaysidecar'")
     _hddid_display

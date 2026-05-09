@@ -1,4 +1,3 @@
-/*! version 1.0.0 */
 capture program drop _hddid_pfc_restore
 program define _hddid_pfc_restore
     version 16
@@ -139,7 +138,10 @@ program define _hddid_pfc_clime_feas_ok, rclass
     capture quietly program list _hddid_clime_feas_ok
     if _rc == 0 {
         _hddid_clime_feas_ok `gap' `cap' `tol' `raw'
-        exit _rc
+        local _cust_rc = _rc
+        local _cust_allowed = r(allowed)
+        return scalar allowed = `_cust_allowed'
+        exit `_cust_rc'
     }
 
     return clear
@@ -418,21 +420,21 @@ program define _hddid_prepare_fold_covinv, rclass
         di as error "{bf:hddid}: fold `_k' reported inconsistent retained-sample size metadata"
         di as error "  nvalid() metadata = `_n_valid'"
         di as error "  rowsof(tildex)     = " %12.0f scalar(`__hddid_tildex_nrows')
-        di as error "  Reason: the retained-sample covariance operator in equations (4.2) and the hddid-r precision path is defined by the actual retained tildex rows, so fold metadata must match the matrix passed to the helper"
+        di as error "  Reason: the retained-sample covariance operator is defined by the actual retained tildex rows, so fold metadata must match the matrix passed to the helper"
         exit 198
     }
     if scalar(`__hddid_tildex_ncols') != `p' {
         di as error "{bf:hddid}: fold `_k' reported inconsistent retained-x dimension metadata"
         di as error "  p() metadata       = `p'"
         di as error "  colsof(tildex)     = " %12.0f scalar(`__hddid_tildex_ncols')
-        di as error "  Reason: equations (4.2) and the hddid-r precision path define the retained-sample covariance inverse on the actual x-dimension of tildex, so p() must match the matrix passed to the helper before single-x versus CLIME branch selection"
+        di as error "  Reason: the retained-sample covariance inverse is defined on the actual x-dimension of tildex, so p() must match the matrix passed to the helper before single-x versus CLIME branch selection"
         exit 198
     }
     if `p' == 1 & `_n_valid' < 1 {
         di as error "{bf:hddid}: fold `_k' has too few valid observations for the retained-sample covariance operator"
         di as error "  n_valid=`_n_valid'"
         di as error "  The retained single-x covariance in the beta-debias precision step requires at least 1 projected observation before the analytic scalar inverse can run"
-        di as error "  Reason: for p=1, equation (4.2) targets the retained empirical second moment E_n[tildeX^2], so a positive scalar covariance object can already exist with one retained row"
+        di as error "  Reason: for p=1 the retained empirical second moment E_n[tildeX^2] is the target, so a positive scalar covariance object can already exist with one retained row"
         exit 2001
     }
     if `p' == 1 {
@@ -479,7 +481,7 @@ program define _hddid_prepare_fold_covinv, rclass
             di as error "  n_valid=`_n_valid'"
             di as error "  E_n[tildeX^2] = " %12.4e ///
                 scalar(`__hddid_singlex_second_moment')
-            di as error "  Reason: for p=1, equation (4.2) debiases beta with the inverse of the retained empirical second moment E_n[tildeX^2]"
+            di as error "  Reason: for p=1 the parametric debiasing step uses the inverse of the retained empirical second moment E_n[tildeX^2]"
             if `_n_valid' == 1 {
                 di as error "  This singleton retained fold is only admissible when the retained scalar tildex row is nonzero after the sieve projection"
             }
@@ -490,13 +492,13 @@ program define _hddid_prepare_fold_covinv, rclass
         di as error "{bf:hddid}: fold `_k' has too few valid observations for the retained-sample covariance operator"
         di as error "  n_valid=`_n_valid'"
         di as error "  The retained-sample covariance in the multivariate beta-debias precision step requires at least 2 observations before the CLIME path can run"
-        di as error "  Reason: with p>1 and fewer than 2 retained rows, the paper's retained-sample precision target cannot support a multivariate covariance inverse and the hddid-r sugm() path is likewise undefined"
+        di as error "  Reason: with p>1 and fewer than 2 retained rows, the retained-sample precision target cannot support a multivariate covariance inverse"
         exit 2001
     }
         local _pfc_analytic_ok "0"
         if `p' == 1 {
-            // Keep the scalar path simple; there is no off-diagonal storage
-            // mode to preserve when x() has only one column.
+            // For p = 1 the precision matrix is scalar; no off-diagonal
+            // structure needs to be preserved.
             matrix `__hddid_covinv' = J(1, 1, .)
             mata: st_matrix("`__hddid_covinv'", ///
                 _hddid_single_x_precision(st_matrix("`__hddid_tildex'")))
@@ -506,9 +508,9 @@ program define _hddid_prepare_fold_covinv, rclass
             }
         }
         if "`_pfc_analytic_ok'" != "1" & `p' > 1 {
-            // Stata stores J(p,p,.) as a symmetric matrix slot. Seed the
-            // placeholder with asymmetric missing sentinels so malformed Python
-            // writes cannot be silently coerced to symmetry before validation.
+            // Stata stores J(p,p,.) as a symmetric matrix. Insert an
+            // asymmetric missing sentinel so that an incomplete Python
+            // write-back is not silently coerced to symmetry.
             matrix `__hddid_covinv' = J(`p', `p', .)
             matrix `__hddid_covinv'[1, 2] = .a
             local _hddid_clime_needs_scipy 0
@@ -577,9 +579,8 @@ program define _hddid_prepare_fold_covinv, rclass
                 local _hddid_clime_needs_scipy `"`r(needs_scipy)'"'
             }
             if "`_hddid_clime_needs_scipy'" == "1" & `_hddid_scipy_validated' == 0 {
-                // Python dependency versions may carry prerelease/local suffixes
-                // such as 1.10rc1 or 2.0+cpu. Compare only the leading numeric
-                // major/minor release fields before first non-diagonal CLIME use.
+                // Python dependency versions may carry prerelease or local
+                // suffixes; compare only the leading major.minor fields.
                 local _hddid_scipy_ver ""
                 local _hddid_scipy_ok 0
                 local _hddid_scipy_highs_ok 0
@@ -658,17 +659,10 @@ program define _hddid_prepare_fold_covinv, rclass
                     }
                 }
                 else {
-                    // The standalone fallback runs after the target sidecar has
-                    // already been imported into Stata's persistent embedded
-                    // Python session. Refresh SciPy's solver modules, but do
-                    // not evict numpy underneath the loaded sidecar module:
-                    // reloading numpy here can split the raw linprog probe and
-                    // the active runtime bridge across incompatible module
-                    // identities before fold execution. Also mirror the actual
-                    // CLIME solve contract: _solve_clime_column() relies on the
-                    // solver's default nonnegative box and does not pass an
-                    // explicit bounds= keyword, so the fallback probe must not
-                    // validate a different call shape than the real solve path.
+                    // Refresh SciPy solver modules without evicting numpy,
+                    // which remains in use by the loaded sidecar. The
+                    // fallback probe mirrors the CLIME solve contract by
+                    // relying on the solver's default nonnegative box.
                     quietly _hddid_pfc_uncache_scipy
                     local _hddid_scipy_highs_ok 0
                     capture python: ///
@@ -720,19 +714,16 @@ program define _hddid_prepare_fold_covinv, rclass
                 di as error "  n_valid=`_n_valid', requested nfolds_cv=`clime_nfolds_cv_requested'"
                 di as error "  CLIME CV requires at least 2 observations per validation fold under equal-block splitting"
                 di as error "  This requires n_valid >= 4 before multivariate retained-sample CLIME tuning can proceed"
-                di as error "  Reason: the paper's equation (4.2) and the hddid-r reference keep p>1 retained covariances on the CLIME + CV path even when the raw second moment is exactly diagonal"
+                di as error "  Reason: p>1 retained covariances remain on the CLIME + CV path even when the raw second moment is exactly diagonal"
                 exit 2001
             }
             if "`verbose'" != "" & ///
                 `_clime_nfolds_cv' < `clime_nfolds_cv_requested' {
                 di as text "  Fold `_k': CLIME CV folds reduced from `clime_nfolds_cv_requested' to `_clime_nfolds_cv' to avoid singleton validation folds"
             }
-            // Keep Python CLIME CV on the same RNG contract as the rest of hddid:
-            // explicit seed() must advance the one seeded internal stream
-            // rather than restarting the same Python seed in every fold, while
-            // omitted seed() still derives a deterministic ambient-RNG-based
-            // integer without consuming the bootstrap stream that seed(-1)
-            // promises to preserve.
+            // Derive the Python CLIME random_state from the same seeded
+            // RNG stream used by the rest of hddid so that explicit
+            // seed() advances the stream rather than restarting it.
             local _clime_random_state `seed'
             if `seed' >= 0 {
                 tempname __hddid_clime_seed_draw
@@ -1122,7 +1113,7 @@ program define _hddid_prepare_fold_covinv, rclass
                 di as error "  The returned `p' x `p' precision matrix must be symmetric within numerical tolerance"
                 di as error "  max |Omega - Omega'| = " %12.4e scalar(`__hddid_covinv_sym_gap')
                 di as error "  tolerance           = " %12.4e scalar(`__hddid_covinv_sym_tol')
-                di as error "  Reason: the paper's debiasing step uses a covariance inverse, which is symmetric by construction"
+                di as error "  Reason: the debiasing step uses a covariance inverse, which is symmetric by construction"
                 exit 198
             }
             tempname __hddid_covinv_diagshort
@@ -1133,15 +1124,12 @@ program define _hddid_prepare_fold_covinv, rclass
             capture scalar drop `__hddid_covinv_rawdiagshort'
             capture scalar drop `__hddid_covinv_scaleop_ok'
             capture scalar drop `__hddid_covinv_rawscaleop_ok'
-            // Section 4 / hddid-r consume the retained precision operator
-            // directly. On exact diagonal retained folds, a finite analytic
-            // Omega can remain usable even when reconstructing raw Sigma would
-            // overflow in machine units. More generally, the bridge can also
-            // certify a non-diagonal operator directly on a scale-stable
-            // Sigma*Omega path without materializing the original-scale Sigma.
-            // Some sidecars emit operators for the centered+rige surrogate,
-            // while others certify the paper's raw retained second moment
-            // E_n[tildeX*tildeX']. Accept either contract when its own
+            // The retained precision operator is consumed directly. On
+            // exact diagonal retained folds, a finite analytic Omega can
+            // remain usable even when reconstructing raw Sigma would
+            // overflow. A non-diagonal operator may also be certified
+            // on a scale-stable Sigma*Omega path without materializing
+            // the original-scale Sigma. Accept either contract when the
             // scale-stable Sigma*Omega identity is numerically accurate.
             capture mata: X = st_matrix("`__hddid_tildex'"); ///
                 Omega = st_matrix("`__hddid_covinv'"); ///
@@ -1221,11 +1209,10 @@ program define _hddid_prepare_fold_covinv, rclass
                                 rawdiag_shortcut = 1; ///
                             } ///
                             /* Once the published raw retained operator ///
-                               itself certifies Sigma_tildex * Omega = I, ///
-                               paper equation (4.2) / hddid-r only need ///
-                               that operator contract; solver provenance ///
-                               metadata is no longer a mathematical ///
-                               prerequisite for the zero-fold shortcut. */ ///
+                               certifies Sigma_tildex * Omega = I, the ///
+                               operator contract alone suffices; solver ///
+                               provenance metadata is no longer required ///
+                               for the zero-fold shortcut. */ ///
                             if (scaleop_gap_raw <= scaleop_tol_raw) { ///
                                 rawscaleop_ok = 1; ///
                             } ///
@@ -1247,7 +1234,7 @@ program define _hddid_prepare_fold_covinv, rclass
                     rawprior(`__hddid_clime_raw_prior')
                 di as error "{bf:hddid}: CLIME sidecar wrote an invalid precision matrix contract in fold `_k'"
                 di as error "  Unable to verify whether the returned precision matrix matches the exact diagonal retained-operator shortcut"
-                di as error "  Reason: equation (4.2) allows a diagonal retained precision operator when its scale-stable analytic inverse remains finite"
+                di as error "  Reason: a diagonal retained precision operator is admissible when its scale-stable analytic inverse remains finite"
                 exit 198
             }
             tempname __hddid_covinv_min_sval __hddid_covinv_sval_tol
@@ -1290,7 +1277,7 @@ program define _hddid_prepare_fold_covinv, rclass
                     rawprior(`__hddid_clime_raw_prior')
                 di as error "{bf:hddid}: CLIME sidecar wrote an invalid precision matrix contract in fold `_k'"
                 di as error "  Unable to verify the returned precision-matrix invertibility"
-                di as error "  Reason: equation (4.2) and the parametric debias step require a usable retained covariance inverse in x() space"
+                di as error "  Reason: the parametric debiasing step requires a usable retained covariance inverse in x() space"
                 exit 198
             }
             if scalar(`__hddid_covinv_inv_ok') != 1 & ///
@@ -1303,7 +1290,7 @@ program define _hddid_prepare_fold_covinv, rclass
                     rawprior(`__hddid_clime_raw_prior')
                 di as error "{bf:hddid}: CLIME sidecar wrote an invalid precision matrix contract in fold `_k'"
                 di as error "  The returned `p' x `p' precision matrix must admit a finite inverse reconstruction"
-                di as error "  Reason: equation (4.2) and the downstream beta-debias step use this object as a retained covariance inverse operator"
+                di as error "  Reason: the beta-debiasing step uses this object as a retained covariance inverse operator"
                 exit 198
             }
             if scalar(`__hddid_covinv_min_sval') <= ///
@@ -1323,15 +1310,14 @@ program define _hddid_prepare_fold_covinv, rclass
                 di as error "  invertibility tol     = " %12.4e scalar(`__hddid_covinv_sval_tol')
                 di as error "  inverse accuracy gap  = " %12.4e scalar(`__hddid_covinv_inv_gap')
                 di as error "  inverse-gap tol       = " %12.4e scalar(`__hddid_covinv_inv_tol')
-                di as error "  Reason: equation (4.2) and the downstream beta-debias step use this object as a retained covariance inverse operator, not just a symmetric feasible matrix"
+                di as error "  Reason: the beta-debiasing step uses this object as a retained covariance inverse operator, not merely a symmetric feasible matrix"
                 exit 198
             }
-            // Paper equation (4.2) and the R implementation use the retained
-            // operator directly once it is finite, square, and numerically
-            // invertible. For p>1 this bridge therefore does not add a
-            // diagonal-sign gate on top of the operator/invertibility checks
-            // above: a custom sidecar may still publish a usable right-multiplier
-            // whose diagonal entries are not all positive.
+            // The retained operator is used directly once it is finite,
+            // square, and numerically invertible. For p > 1 no
+            // diagonal-sign gate is imposed beyond the invertibility
+            // checks above: a valid right-multiplier may have diagonal
+            // entries that are not all positive.
             local _clime_nfolds_cv_realized = scalar(__hddid_clime_effective_nfolds)
             if `_hddid_clime_restore_scalar' {
                 capture scalar drop __hddid_clime_effective_nfolds
@@ -1360,15 +1346,13 @@ program define _hddid_prepare_fold_covinv, rclass
                 scalar `__hddid_covinv_diag_tol' = 2.220446049250313e-16
             }
             else {
-                // The CLIME lambda contract already absorbs solver-side
-                // approximation error. The post-write check only needs
-                // enough slack for matrix-multiply/bridge roundoff on the
-                // dimensionless Sigma*Omega product itself. Evaluate that
-                // bound on equation (4.2)'s raw retained second moment rather
-                // than a recentered surrogate, while still rescaling before
-                // crossproducts so finite retained covariances do not fail
-                // closed merely because X'X or x_scale^2 overflows before the
-                // final /n normalization is applied.
+                // The CLIME lambda contract absorbs solver-side approximation
+                // error. The post-write check only requires enough slack for
+                // roundoff on the dimensionless Sigma*Omega product. Evaluate
+                // the bound on the raw retained second moment, rescaling before
+                // crossproducts so that finite retained covariances are not
+                // rejected merely because X'X or x_scale^2 overflows before
+                // the /n normalization is applied.
                 capture mata: X = st_matrix("`__hddid_tildex'"); ///
                     n = rows(X); ///
                     Omega = st_matrix("`__hddid_covinv'"); ///
@@ -1415,7 +1399,7 @@ program define _hddid_prepare_fold_covinv, rclass
                 if _rc != 0 {
                     di as error "{bf:hddid}: CLIME sidecar wrote an invalid precision matrix contract in fold `_k'"
                     di as error "  Unable to verify the returned retained-sample CLIME feasibility bound"
-                    di as error "  Reason: with p>1, the paper/R CLIME path requires a retained-sample covariance inverse that approximately solves Sigma_tildex * Omega = I columnwise"
+                    di as error "  Reason: with p>1 the CLIME path requires a retained-sample covariance inverse that approximately solves Sigma_tildex * Omega = I columnwise"
                     exit 198
                 }
             }
@@ -1432,7 +1416,7 @@ program define _hddid_prepare_fold_covinv, rclass
                         %12.4e scalar(`__hddid_covinv_diag_gap')
                     di as error "  diagonal shortcut tol     = " ///
                         %12.4e scalar(`__hddid_covinv_diag_tol')
-                    di as error "  Reason: equation (4.2) and the hddid-r CLIME path keep multivariate retained covariances on the CLIME + CV contract even when the selected precision matrix equals the exact raw inverse"
+                    di as error "  Reason: multivariate retained covariances remain on the CLIME + CV contract even when the selected precision matrix equals the exact raw inverse"
                 }
                 else {
                     di as error "  p>1 CLIME tuning requires a realized fold count in [2, `_clime_nfolds_cv']"
@@ -1474,8 +1458,8 @@ program define _hddid_prepare_fold_covinv, rclass
             }
         }
 
-        // Pass missing to Mata when the caller requested no seed so bootstrap
-        // and helper failure paths never publish a partial precision matrix.
+        // Propagate the precision matrix to the caller; missing values
+        // signal that no valid estimate was produced.
         matrix `__hddid_covinv_target' = `__hddid_covinv'
 
     return scalar clime_effective = `_hddid_clime_effective'

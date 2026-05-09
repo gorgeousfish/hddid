@@ -5,9 +5,7 @@ capture program drop _hddid_uncache_scipy
 capture program drop _hddid_uncache_numpy
 capture program drop _hddid_clime_scipy_probe
 capture program drop _hddid_clime_feas_ok
-capture program drop _hddid_cvlasso_pick_lambda
 capture program drop _hddid_run_rng_isolated
-capture program drop _hddid_resolve_prop_cv
 capture program drop _hddid_count_split_groups
 capture program drop _hddid_choose_outer_split_sample
 capture program drop _hddid_default_outer_fold_map
@@ -334,13 +332,8 @@ program define _hddid_main, eclass
         local _hddid_has_CIuniform = (_rc == 0)
         capture confirm matrix e(z0)
         local _hddid_has_z0 = (_rc == 0)
-        // Bare replay should still classify a current surface as HDDID when
-        // current role provenance remains recoverable from e(cmdline) or the
-        // posted beta labels and only ancillary wrapper summaries such as
-        // e(N_trimmed) or one role helper local are missing. If e(stdg) or
-        // e(alpha) is malformed but CIpoint/CIuniform still advertise the
-        // surrounding current nonparametric surface, _hddid_display should own
-        // the HDDID-specific fail-closed guidance instead of generic rc301.
+        // Classify a stored surface as HDDID when core estimation results
+        // are present, even if ancillary summary scalars are missing.
         if `_hddid_has_p' & `_hddid_has_k' & `_hddid_has_q' & ///
             `_hddid_has_N' & ///
             `_hddid_has_xdebias' & `_hddid_has_stdx' & ///
@@ -488,9 +481,8 @@ program define _hddid_main, eclass
             regexm(`"`_hddid_postcomma_lc'"', "(^|[ ,])tr(e(a(t)?)?)?[(]") | ///
             regexm(`"`_hddid_postcomma_lc'"', "(^|[ ,])x[(]") | ///
             regexm(`"`_hddid_postcomma_lc'"', "(^|[ ,])z[(]")
-        // With stored hddid results in memory, a single depvar plus unrelated
-        // comma options is still replay misuse unless the caller is actually
-        // supplying at least one structural role option for re-estimation.
+        // A depvar with comma options but no structural role option is replay
+        // misuse when stored results already exist.
         if `_hddid_active_surface' & !replay() & ///
             `_hddid_pos1_is_var' & `"`_hddid_pos2'"' == "" & ///
             !`_hddid_has_roleopt' {
@@ -511,9 +503,8 @@ program define _hddid_main, eclass
             local _hddid_bad_method_raw `"`r(raw)'"'
             local _hddid_bad_method_disp `"`_hddid_bad_method'"'
             local _hddid_bad_method_assignok 0
-            // Keep the exact offending token for the follow-up echo, but show
-            // a clean payload in the main "got ..." slot when assignment-form
-            // method input preserved quotes/parentheses verbatim.
+            // Extract the clean method payload for display while preserving
+            // the raw token for the diagnostic echo.
             if `"`_hddid_bad_method'"' == `"`_hddid_bad_method_raw'"' & ///
                 `"`_hddid_bad_method_raw'"' != "" {
                 local _hddid_bad_method_probe `"`_hddid_bad_method_raw'"'
@@ -573,10 +564,8 @@ program define _hddid_main, eclass
         quietly _hddid_parse_estopt_rbridge, ///
             optsraw(`"`_hddid_postcomma'"')
         if `"`r(invalid)'"' == "1" {
-            // A bare depvar literally named "estimator" is legal in the
-            // documented first positional slot. Only reject estimator-style
-            // misuse when the precomma text is not exactly one existing
-            // variable name.
+            // A depvar named "estimator" is legal; reject only when the
+            // precomma text is not a single existing variable.
             if !(`"`r(form)'"' == "bare" & `_hddid_pos1_is_var' & ///
                 `"`_hddid_pos2'"' == "" & ///
                 lower(strtrim(`"`r(raw)'"')) == ///
@@ -632,8 +621,7 @@ program define _hddid_main, eclass
         exit 198
     }
 
-    // Replay is display-only: it reads posted e() results and must not touch
-    // estimation-side effects such as cross-fitting, sidecar loading, or RNG.
+    // Replay reads stored e() results without re-estimating.
     if replay() {
         if !`_hddid_active_surface' {
             error 301
@@ -642,14 +630,8 @@ program define _hddid_main, eclass
         if `_hddid_replay_comma' > 0 {
             local _hddid_replay_opts_raw = ///
                 strtrim(substr(`"`_hddid_input_trim'"', `_hddid_replay_comma' + 1, .))
-            // Stata's syntax parser can mangle parenthesized bare tokens like
-            // (ra) or ("ra") before helper option parsing sees them. Catch
-            // those replay-only estimator-family spellings directly from the
-            // raw command tail so they keep the same fixed-AIPW guidance as
-            // bare ra/ipw/aipw misuse. The same malformed family switch can
-            // also arrive with one redundant outer parenthesis layer, e.g.
-            // ((ra)) or (("ra")), so preserve that exact raw token too
-            // instead of degrading it to generic replay-option guidance.
+            // Detect parenthesized estimator-family tokens directly from the
+            // raw command tail, including double-parenthesized variants.
             if regexm(`"`_hddid_replay_opts_raw'"', ///
                 "(^|[ ])(([(][ ]*[(][ ]*([A-Za-z][A-Za-z0-9_]*)[ ]*[)][ ]*[)]))([ ]|$)") {
                 local _hddid_replay_bad_raw = strtrim(regexs(2))
@@ -876,7 +858,7 @@ program define _hddid_main, eclass
             capture scalar drop __hddid_clime_raw_feasible
             scalar __hddid_clime_raw_feasible = scalar(`_hddid_craw_pr')
         }
-        // Failed estimation should not clobber the caller's prior e() results.
+        // Restore prior e() results on estimation failure.
         if `_hddid_had_estimates' {
             quietly estimates restore `_hddid_hold_est'
             capture estimates drop `_hddid_hold_est'
@@ -914,8 +896,7 @@ program define _hddid_probe_pkgdir_from_context, rclass
         }
     }
 
-    // Probe upward from the current working tree because `run hddid.ado`
-    // does not register sibling sidecars on adopath.
+    // Search upward from the working directory for a co-located sidecar bundle.
     local _probe_queue
     if `"`explicit'"' != "" {
         local _probe_queue `"`_probe_queue' `"`explicit'"'"'
@@ -1018,9 +999,7 @@ program define _hddid_resolve_pkgdir, rclass
         }
     }
 
-    // An explicit package directory passed via `run hddid.ado "<pkgdir>"`
-    // must bind this source-loaded command to that exact sidecar bundle, even
-    // if an older cached or adopath copy is also available.
+    // An explicit package directory takes priority over cached or adopath copies.
     if `"`explicit'"' != "" {
         capture confirm file "`explicit'/hddid.ado"
         if _rc == 0 {
@@ -1052,19 +1031,12 @@ program define _hddid_resolve_pkgdir, rclass
                 }
             }
         }
-        // When the explicit directory is the wrapper's auto-resolved adopath
-        // entry (e.g. _/ from net install), it will not contain the full
-        // co-located bundle. Fall through to findfile-based resolution instead
-        // of failing closed.
+        // An adopath-only directory may lack the full bundle; fall through to
+        // findfile-based resolution.
     }
 
-    // First prefer the command's currently discoverable bundle on adopath or
-    // in the nearby source tree. A stale global cache must not override a
-    // newly source-run or shadowed hddid.ado that already has its own sibling
-    // sidecars available.
-    //
-    // An installed copy is acceptable only if the full sidecar bundle sits in
-    // the same directory as hddid.ado.
+    // Prefer the currently discoverable bundle on adopath or in the nearby
+    // source tree over a stale global cache.
     capture findfile hddid.ado
     if _rc == 0 {
         local _pkgmain "`r(fn)'"
@@ -1104,10 +1076,8 @@ program define _hddid_resolve_pkgdir, rclass
         }
     }
 
-    // Stata net install distributes files by first letter, so sidecars
-    // starting with h/ and _/ end up in different directories. When the
-    // co-located check above fails, fall back to findfile-based resolution
-    // using the directory of _hddid_main.ado as the canonical pkgdir.
+    // Under net install, sidecars with different first-letter prefixes reside
+    // in separate directories. Fall back to the directory of _hddid_main.ado.
     capture findfile _hddid_main.ado
     if _rc == 0 {
         local _findfile_main "`r(fn)'"
@@ -1129,8 +1099,7 @@ program define _hddid_resolve_pkgdir, rclass
                 }
             }
             if `_findfile_ok' {
-                // For p>1 Python sidecars, check via findfile since they may
-                // be in a separate py/ directory under the adopath root.
+                // Python sidecars may reside in a separate py/ subdirectory.
                 local _findfile_py_ok 1
                 if `_hddid_needpython' == 1 {
                     capture findfile hddid_clime.py
@@ -1162,9 +1131,8 @@ program define _hddid_resolve_pkgdir, rclass
         }
     }
 
-    // Reuse a previously validated package directory only as a final fallback
-    // when neither the current adopath resolution nor the nearby workspace
-    // context yields a complete sibling sidecar bundle.
+    // Fall back to a previously validated package directory when adopath and
+    // workspace resolution both fail.
     local _cached `"$HDDID_PACKAGE_DIR"'
     if `"`_cached'"' != "" {
         capture confirm file "`_cached'/hddid.ado"
@@ -1197,16 +1165,15 @@ end
 
 program define _hddid_uncache_scipy
     version 16
-    // The embedded Python session persists across Stata calls, so drop scipy
-    // modules before dependency retries to avoid stale shadow imports pinned
-    // in sys.modules.
+    // Drop scipy modules before dependency retries to avoid stale imports
+    // in the persistent Python session.
     capture python: import importlib, sys; _mods = [m for m in list(sys.modules) if m == "scipy" or m.startswith("scipy.")]; _trash = [sys.modules.pop(m, None) for m in _mods]; importlib.invalidate_caches()
 end
 
 program define _hddid_uncache_numpy
     version 16
-    // Clear cached numpy modules so version/path checks reflect the current
-    // environment instead of an earlier shadow import or mutated session copy.
+    // Clear cached numpy modules so version checks reflect the current
+    // environment.
     capture python: import importlib, sys; _mods = [m for m in list(sys.modules) if m == "numpy" or m.startswith("numpy.")]; _trash = [sys.modules.pop(m, None) for m in _mods]; importlib.invalidate_caches()
 end
 
@@ -1412,51 +1379,6 @@ program define _hddid_probe_fail_classify, rclass
     return local reason "`_hddid_probe_reason'"
 end
 
-program define _hddid_cvlasso_pick_lambda, rclass
-    version 16
-    syntax , CONTEXT(string)
-
-    return clear
-
-    tempname _lambda_scalar _lambda_grid
-    capture scalar `_lambda_scalar' = e(lopt)
-    if _rc == 0 & `_lambda_scalar' < . {
-        if `_lambda_scalar' <= 0 {
-            di as error "{bf:hddid}: `context' produced a nonpositive e(lopt)"
-            exit 498
-        }
-        return scalar lambda = `_lambda_scalar'
-        return local source "lopt"
-        exit
-    }
-
-    capture matrix `_lambda_grid' = e(lambdamat)
-    if _rc != 0 {
-        di as error "{bf:hddid}: `context' did not leave a usable lambda choice"
-        di as error "  Neither e(lopt) nor e(lambdamat) is available after cvlasso"
-        exit 498
-    }
-
-    local _lambda_last = rowsof(`_lambda_grid')
-    if `_lambda_last' < 1 {
-        di as error "{bf:hddid}: `context' returned an empty lambda grid"
-        exit 498
-    }
-
-    scalar `_lambda_scalar' = el(`_lambda_grid', `_lambda_last', 1)
-    if `_lambda_scalar' >= . {
-        di as error "{bf:hddid}: `context' produced a non-finite fallback lambda"
-        exit 498
-    }
-    if `_lambda_scalar' <= 0 {
-        di as error "{bf:hddid}: `context' produced a nonpositive fallback lambda"
-        exit 498
-    }
-
-    return scalar lambda = `_lambda_scalar'
-    return local source "grid_last"
-end
-
 program define _hddid_run_rng_isolated
     version 16
     gettoken seed 0 : 0, parse(" ")
@@ -1523,82 +1445,13 @@ program define _hddid_run_rng_isolated
         global HDDID_LASTISO_INTERNAL_RNG `"`c(rngstate)'"'
     }
 
-    // Standalone seeded helper calls always restore the caller's ambient RNG.
-    // Active-stream calls intentionally keep successful draws committed inside
-    // the command-level seeded stream, but a failed substep is discarded and
-    // must not perturb later retries/fallbacks.
+    // Standalone seeded calls restore the caller's RNG. Active-stream calls
+    // keep successful draws but discard failed substeps.
     if `_restore_rngstate' | (`_cmd_rc' != 0 & `_use_active_stream') {
         quietly set rngstate `_rngstate_before'
     }
 
     exit `_cmd_rc'
-end
-
-program define _hddid_resolve_prop_cv, rclass
-    version 16
-    syntax, FOLD(integer) NTRAIN(integer) NTREAT(integer) NCONTROL(integer)
-
-    return clear
-
-    local _ps_lambda = e(lopt)
-    local _ps_loptid = e(loptid)
-    local _ps_lmax = e(lmax)
-    local _ps_nlambda = e(lcount)
-    local _ps_missing_lopt = missing(`_ps_lambda')
-
-    if `_ps_missing_lopt' {
-        if missing(`_ps_lmax') | `_ps_lmax' <= 0 | ///
-            missing(`_ps_nlambda') | `_ps_nlambda' < 1 | ///
-            `_ps_nlambda' != floor(`_ps_nlambda') {
-            di as error "{bf:hddid}: cvlassologit returned an unusable propensity CV contract in fold `fold'"
-            di as error "  training observations: total=`ntrain', treated=`ntreat', control=`ncontrol'"
-            di as error "  Expected a finite {bf:e(lmax)} > 0 and integer {bf:e(lcount)} >= 1 when {bf:e(lopt)} is missing"
-            di as error "  Returned contract: lopt=" %9.6f `_ps_lambda' ", loptid=`_ps_loptid', lcount=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-            exit 498
-        }
-        // Some seeded cvlassologit runs leave e(lopt) missing even though a
-        // finite lambda path exists. Recover from the path's upper boundary
-        // rather than passing a missing lambda onward.
-        local _ps_lambda = `_ps_lmax'
-        local _ps_loptid = 1
-    }
-    else {
-        if `_ps_lambda' >= . | `_ps_lambda' <= 0 {
-            di as error "{bf:hddid}: cvlassologit returned a nonpositive or non-finite {bf:e(lopt)} in fold `fold'"
-            di as error "  training observations: total=`ntrain', treated=`ntreat', control=`ncontrol'"
-            di as error "  Returned contract: lopt=" %9.6f `_ps_lambda' ", loptid=`_ps_loptid', lcount=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-            exit 498
-        }
-        if missing(`_ps_loptid') {
-            di as error "{bf:hddid}: cvlassologit returned a usable lambda but a missing {bf:e(loptid)} in fold `fold'"
-            di as error "  training observations: total=`ntrain', treated=`ntreat', control=`ncontrol'"
-            di as error "  A nonmissing {bf:e(lopt)} requires integer boundary metadata {bf:e(loptid)} in [1, {bf:e(lcount)}]"
-            di as error "  Returned contract: lopt=" %9.6f `_ps_lambda' ", loptid=`_ps_loptid', lcount=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-            exit 498
-        }
-        if missing(`_ps_nlambda') | `_ps_nlambda' < 1 | ///
-            `_ps_nlambda' != floor(`_ps_nlambda') {
-            di as error "{bf:hddid}: cvlassologit returned an unusable nonmissing-lopt propensity CV contract in fold `fold'"
-            di as error "  training observations: total=`ntrain', treated=`ntreat', control=`ncontrol'"
-            di as error "  A nonmissing {bf:e(lopt)} requires integer {bf:e(lcount)} >= 1"
-            di as error "  Returned contract: lopt=" %9.6f `_ps_lambda' ", loptid=`_ps_loptid', lcount=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-            exit 498
-        }
-        if `_ps_loptid' != floor(`_ps_loptid') | ///
-            `_ps_loptid' < 1 | `_ps_loptid' > `_ps_nlambda' {
-            di as error "{bf:hddid}: cvlassologit returned an invalid {bf:e(loptid)} outside [1, lcount] in fold `fold'"
-            di as error "  training observations: total=`ntrain', treated=`ntreat', control=`ncontrol'"
-            di as error "  A nonmissing {bf:e(lopt)} requires integer boundary metadata {bf:e(loptid)} in [1, {bf:e(lcount)}]"
-            di as error "  Returned contract: lopt=" %9.6f `_ps_lambda' ", loptid=`_ps_loptid', lcount=`_ps_nlambda', lmax=" %9.6f `_ps_lmax'
-            exit 498
-        }
-    }
-
-    return scalar lambda = `_ps_lambda'
-    return scalar loptid = `_ps_loptid'
-    return scalar lmax = `_ps_lmax'
-    return scalar nlambda = `_ps_nlambda'
-    return scalar missing_lopt = `_ps_missing_lopt'
 end
 
 program define _hddid_count_split_groups, rclass
@@ -1612,9 +1465,7 @@ program define _hddid_count_split_groups, rclass
 
     tempname __hddid_group_counts
     matrix `__hddid_group_counts' = J(1, 2, 0)
-    // cvlasso/cvlassologit can clear ad-hoc Mata symbols created by a prior
-    // successful hddid call. Re-load the Mata sidecar on demand before this
-    // preprocessing guard asks for canonical split-key counts again.
+    // Re-load the Mata sidecar if cvlasso cleared prior Mata symbols.
     capture mata: _hddid_canonical_group_counts(J(1, 1, 0), J(1, 1, 0))
     if _rc != 0 {
         quietly _hddid_resolve_pkgdir ""
@@ -1646,11 +1497,9 @@ program define _hddid_choose_outer_split_sample, rclass
 
     return clear
 
-    // The paper/R split is anchored on the sample that actually carries the
-    // held-out score. In the default internal path, D/W-complete rows missing
-    // depvar() can still widen the propensity-training sample, but they must
-    // not relabel the common-score outer fold map. nofirst keeps its own
-    // broader pretrim fold-feasibility path.
+    // The sample split is anchored on observations carrying the held-out score.
+    // Rows missing depvar() may widen the propensity-training sample but must not
+    // relabel the outer fold map. nofirst uses a broader pretrim fold-feasibility path.
     local _samplevar `touse'
     if "`nofirst'" != "" {
         local _samplevar `foldtouse'
@@ -1681,16 +1530,9 @@ program define _hddid_sort_default_innercv
     syntax, STAge(string) FOLDRank(varname numeric) TREAT(varname numeric) ///
         XVARS(varlist numeric) ZVAR(varname numeric) DEPVAR(varname numeric)
 
-    // [AUDIT FIX] The prior sort `treat foldrank xvars zvar` created
-    // deterministic inner-CV splits for cvlasso/cvlassologit sorted by x.
-    // For high-dimensional x, this makes inner validation folds
-    // non-representative (inner fold 1 = smallest x, fold K = largest x),
-    // biasing the CV lambda selection and causing systematic over-shrinkage
-    // of the first-stage nuisance predictions.
-    // Fix: sort only by treatment and fold rank. The fold rank already
-    // provides a deterministic ordering that is not systematically aligned
-    // with the x-covariate distribution, so inner CV folds remain
-    // approximately representative random subsets.
+    // Sort by treatment and fold rank only. Sorting on x covariates would
+    // align inner CV folds with the covariate distribution, biasing lambda
+    // selection.
     local _stage = lower(strtrim(`"`stage'"'))
     if "`_stage'" == "propensity" {
         sort `treat' `foldrank'
@@ -1919,8 +1761,8 @@ real rowvector _hddid_canonical_group_counts(
 }
 end
 
-// Source-loading this file should only define programs. Resolve the package
-// directory lazily inside hddid so `run hddid.ado' does not clobber caller r().
+// Source-loading defines programs only. Package directory resolution is
+// deferred to the hddid command call to avoid clobbering caller r().
 
 capture program drop _hddid_parse_estopt
 capture program drop _hddid_parse_estopt_core
@@ -1945,10 +1787,8 @@ program define _hddid_parse_methodopt, rclass
     local _hddid_method_scan_lc `"`_hddid_opts_raw_lc'"'
     local _hddid_method_first ""
     local _hddid_method_first_raw ""
-    // Nested method(...) text inside an estimator-family payload (for example
-    // estimator= method(ra)) is malformed estimator syntax, not a real basis
-    // selector. Keep the method-domain precheck from stealing those cases
-    // before estimator-style guidance classifies them.
+    // Nested method(...) inside an estimator-family payload is malformed
+    // estimator syntax, not a basis selector.
     local _hddid_method_scan_lc = ///
         regexr(`"`_hddid_method_scan_lc'"', ///
         "(^|[ ,])estimator[ ]*=[ ]*[(]?[ ]*method[ ]*[(][^)]*[)][ ]*[)]?", ///
@@ -1968,11 +1808,8 @@ program define _hddid_parse_methodopt, rclass
 
     local _hddid_method_scan `"`_hddid_method_scan_lc'"'
     local _hddid_method_count 0
-    // Nonempty spaced assignment-style method = ... tokens should fall
-    // through to the concrete RHS branches below so public guidance preserves
-    // the full malformed token instead of clipping it to method = alone.
-    // Truly empty RHS cases are still caught by the dedicated empty-assignment
-    // branch later in this parser.
+    // Spaced assignment-style tokens fall through to preserve the full
+    // malformed token in guidance.
     while regexm(`"`_hddid_method_scan'"', ///
         "(^|[ ,])(method[ ]*=[ ]*[(][ ]*([^)]*)[ ]*[)][^ ,]+)") {
         local _hddid_method_match = strtrim(regexs(2))
@@ -2010,10 +1847,8 @@ program define _hddid_parse_methodopt, rclass
             return local raw `"`_hddid_method_raw'"'
             exit
         }
-        // Assignment-style method=... text is malformed syntax on its own.
-        // Even if a later real method(Tri)/method(Pol) follows, the bad
-        // assignment token is not a first valid method() request and must not
-        // be upgraded into duplicate-method guidance.
+        // Assignment-style method=... is malformed regardless of later valid
+        // method() options.
         return local invalid "1"
         return local method `"`_hddid_method_raw'"'
         return local raw `"`_hddid_method_raw'"'
@@ -2052,10 +1887,8 @@ program define _hddid_parse_methodopt, rclass
             return local raw `"`_hddid_method_raw'"'
             exit
         }
-        // Assignment-style method=... text is malformed syntax on its own.
-        // Even if a later real method(Tri)/method(Pol) follows, the bad
-        // assignment token is not a first valid method() request and must not
-        // be upgraded into duplicate-method guidance.
+        // Assignment-style method=... is malformed regardless of later valid
+        // method() options.
         return local invalid "1"
         return local method `"`_hddid_method_raw'"'
         return local raw `"`_hddid_method_raw'"'
@@ -2128,16 +1961,12 @@ program define _hddid_parse_estopt_core, rclass
 
     return clear
     local _hddid_opts_raw `optsraw'
-    // Macro-expanded option text can retain Stata escape sequences like \"
-    // or \'. Normalize those first so estimator-family guidance echoes a
-    // human-readable token instead of macro-quoting artifacts.
+    // Normalize Stata escape sequences in macro-expanded option text.
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(92) + char(34), char(34), .)
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(92) + char(39), char(39), .)
-    // Stata treats tabs/newlines as legal whitespace in command input.
-    // Normalize them here so estimator-contract guidance does not depend on
-    // whether the caller separated tokens with spaces or other whitespace.
+    // Normalize tabs and newlines to spaces.
     local _hddid_opts_raw = ///
         subinstr(`"`_hddid_opts_raw'"', char(9), " ", .)
     local _hddid_opts_raw = ///
@@ -2147,16 +1976,12 @@ program define _hddid_parse_estopt_core, rclass
     local _hddid_opts_raw_orig = ///
         strtrim(subinstr(`"`_hddid_opts_raw'"', ",", " ", .))
     local _hddid_opts_raw = lower(`"`_hddid_opts_raw_orig'"')
-    // Mask x() payloads only for the final bare-token fallback branches. Legal
-    // x variables may literally be named ra/ipw/aipw, but those names must not
-    // be mistaken for unsupported estimator-family switches.
+    // Mask x() payloads in bare-token branches so legal variable names like
+    // ra/ipw/aipw are not mistaken for estimator-family switches.
     local _hddid_opts_raw_bare = ///
         regexr(`"`_hddid_opts_raw'"', "(^|[ ,])x[ ]*[(][^)]*[)]", ///
         " x(__hddid_xpayload__)")
-    // Preserve empty quoted estimator payloads before the generic quote
-    // normalization below. Collapsing doubled quotes first would turn
-    // estimator=('') / estimator=("") into estimator=(), which changes the
-    // offending token shown in fixed-AIPW guidance.
+    // Preserve empty quoted estimator payloads before quote normalization.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*[(][ ]*["]["][ ]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -2173,10 +1998,7 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Empty quoted alias payloads are malformed estimator-family assignments
-    // in their own right. Preserve the exact alias token before later
-    // quote-normalization or generic alias parsing can rewrite ra="" to ra=
-    // or swallow a separate trailing method()/q()/... option into the echo.
+    // Preserve empty quoted alias payloads before later quote normalization.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*["]["])([ ]|$)"')
     if `_hddid_match' {
@@ -2223,11 +2045,8 @@ program define _hddid_parse_estopt_core, rclass
     local _hddid_opts_raw_quoted = ///
         subinstr(`"`_hddid_opts_raw_quoted'"', ///
         char(39) + char(39), char(39), .)
-    // A quoted parenthesized alias token remains the offending unsupported
-    // estimator-family switch even when a later real method() option follows.
-    // Canonical quoted RHS payloads should therefore reuse the same alias-head
-    // guidance as the already-fixed noncanonical quoted path, with method()
-    // kept outside the echoed offending token.
+    // A quoted parenthesized alias token is classified independently of any
+    // later method() option.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["](r|ra|i|ip|ipw|a|ai|aip|aipw)["][ ]*[)])[ ]+(method[ ]*[(][^)]*[)])"')
     if `_hddid_match' {
@@ -2288,19 +2107,14 @@ program define _hddid_parse_estopt_core, rclass
             exit
         }
     }
-    // Define legal-follow patterns before the empty-assignment guard runs.
-    // Otherwise an undefined local expands to an empty regex fragment and
-    // every nonempty estimator=payload is misclassified as bare estimator=.
+    // Define legal-follow patterns before the empty-assignment guard.
     local _hddid_estopt_lparen_follow ///
-        "(c|cf|cfo|cfor|cform|cforma|cformat|ci|cit|city|cityp|citype|p|pf|pfo|pfor|pform|pforma|pformat|s|sf|sfo|sfor|sform|sforma|sformat|fvwr|fvwra|fvwrap|fvwrapo|fvwrapon|t|ti|tit|titl|title|tr|tre|trea|treat|x|z|z0|k|l|le|lev|leve|level|m|me|met|meth|metho|method|q|alp|alph|alpha|pi|pih|piha|pihat|phi1|phi1h|phi1ha|phi1hat|phi0|phi0h|phi0ha|phi0hat|seed|sep|sepa|separ|separa|separat|separato|separator|depn|depna|depnam|depname|nb|nbo|nboo|nboot)[ ]*[(]"
+        "(c|cf|cfo|cfor|cform|cforma|cformat|ci|cit|city|cityp|citype|p|pf|pfo|pfor|pform|pforma|pformat|s|sf|sfo|sfor|sform|sforma|sformat|fvwr|fvwra|fvwrap|fvwrapo|fvwrapon|t|ti|tit|titl|title|tr|tre|trea|treat|x|z|z0|k|l|le|lev|leve|level|m|me|met|meth|metho|method|q|alp|alph|alpha|pi|pih|piha|pihat|phi1|phi1h|phi1ha|phi1hat|phi0|phi0h|phi0ha|phi0hat|seed|sep|sepa|separ|separa|separat|separato|separator|depn|depna|depnam|depname|nb|nbo|nboo|nboot|stage1|stage1p|stage1pe|stage1pen|stage1pena|stage1penal|stage1penalt|stage1penalty)[ ]*[(]"
     local _hddid_estopt_bare_follow ///
         "(ab|abb|abbr|abbre|abbrev|allb|allba|allbas|allbase|allbasel|allbasele|allbaselev|allbaseleve|allbaselevel|allbaselevels|b|be|bet|beta|basel|basele|baselev|baseleve|baselevel|baselevels|cns|cnsr|cnsre|cnsrep|cnsrepo|cnsrepor|cnsreport|cod|codi|codin|coding|coefl|coefle|coefleg|coeflege|coeflegen|coeflegend|com|comp|compa|compar|compare|e|ef|efo|efor|eform|empty|emptyc|emptyce|emptycel|emptycell|emptycells|f|fi|fir|firs|first|fu|ful|full|fullc|fullcn|fullcns|fullcnsr|fullcnsre|fullcnsrep|fullcnsrepo|fullcnsrepor|fullcnsreport|fvl|fvla|fvlab|fvlabe|fvlabel|ls|lst|lstr|lstre|lstret|lstretch|ma|mar|mark|markd|markdo|markdow|markdown|noa|noab|noabb|noabbr|noabbre|noabbrev|not|nota|notab|notabl|notable|noempty|noemptyc|noemptyce|noemptycel|noemptycell|noemptycells|noo|noom|noomi|noomit|noomitt|noomitte|noomitted|nop|nopv|nopva|nopval|nopvalu|nopvalue|nopvalues|o|om|omi|omit|omitt|omitte|omitted|pl|plu|plus|se|sel|sele|seleg|selege|selegen|selegend|noci|nofv|nofvl|nofvla|nofvlab|nofvlabe|nofvlabel|noh|nohe|nohea|nohead|noheade|noheader|nols|nolst|nolstr|nolstre|nolstret|nolstretc|nolstretch|nof|nofi|nofir|nofirs|nofirst|ver|vers|versu|versus|verb|verbo|verbos|verbose|vsq|vsqu|vsqui|vsquis|vsquish)($|[ ])"
     local _hddid_estopt_syntax_follow ///
         "((if|in)($|[ ])|([[][^]]*[]]))"
-    // Glued method() payloads are part of the malformed estimator token
-    // itself. Catch them before the empty-assignment guards below, otherwise
-    // estimator=method(...) collapses to estimator= and estimator=(...)method(...)
-    // swallows later q()/seed() syntax into the public raw echo.
+    // Catch glued method() payloads before empty-assignment guards.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*method[ ]*[(][^)]*[)])([ ]|$)")
     if `_hddid_match' {
@@ -2421,11 +2235,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // A complete parenthesized estimator=(...) token should stand on its own
-    // even when a real hddid option follows. Otherwise the generic
-    // multi-token malformed-assignment branch swallows later method()/q()/...
-    // text into the public estimator echo, even though those options are not
-    // part of the estimator-family misuse.
+    // A parenthesized estimator=(...) token is classified independently of
+    // later hddid options.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*[(][ ]*([^)]*)[ ]*[)])[ ]+((`_hddid_estopt_lparen_follow')|(`_hddid_estopt_bare_follow'))")
     if `_hddid_match' {
@@ -2462,9 +2273,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Later syntax fragments like if/in/[pw=...] are not part of the
-    // malformed estimator=(...) token either, so keep the raw echo pinned to
-    // estimator=(...) before the generic multi-token branch runs.
+    // Syntax fragments after estimator=(...) are not part of the malformed
+    // token.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*[(][ ]*([^)]*)[ ]*[)])[ ]+(`_hddid_estopt_syntax_follow')")
     if `_hddid_match' {
@@ -2501,11 +2311,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Quoted parenthesized estimator-family assignments should preserve the
-    // quoted malformed token itself when a later real hddid option head like
-    // method()/q()/seed()/... follows. Otherwise the generic multi-token
-    // branch below swallows that later option into the public offending-token
-    // echo instead of classifying the quoted token on its own.
+    // Quoted parenthesized estimator assignments are classified independently
+    // of later hddid options.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)])[ ]+(method[ ]*[(][^)]*[)])"')
     if `_hddid_match' {
@@ -2536,11 +2343,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Quoted parenthesized alias assignments that are immediately followed by
-    // method() belong to the same malformed estimator-style attempt. Keep the
-    // full raw echo just like the existing unquoted parenthesized alias +
-    // method() path; otherwise adding quotes changes the public contract by
-    // clipping the later method() token away from the malformed input.
+    // Quoted parenthesized alias assignments followed by method() are part of
+    // one malformed estimator attempt.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)][ ]+method[ ]*[(][^)]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -2571,12 +2375,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // Preserve exact raw echoes for quoted parenthesized alias assignments
-    // before later quote-stripping. The unsupported switch is the alias head
-    // itself (ra/ipw/aipw), not the quoted RHS payload, because HDDID exposes
-    // one fixed AIPW estimator path and never publishes ra=/ipw=/aipw= as real
-    // option domains. Therefore the parser should classify these malformed
-    // inputs by the lhs alias head while preserving the exact raw token.
+    // Classify quoted parenthesized alias assignments by the alias head
+    // (ra/ipw/aipw) while preserving the raw token.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["]([^"]*)["][ ]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -2747,13 +2547,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // The simple quoted-alias branches above already preserve exact raw echoes
-    // when a quoted alias token is followed by a space. Re-checking the same
-    // shape against the full legal-follow bundles only adds redundant capture
-    // groups and trips Stata's regex group limit on unrelated unquoted input.
-    // But quoted parenthesized estimator=(...) tokens still need to preserve
-    // canonical unsupported-switch guidance when the later token is really a
-    // separate legal option head or syntax fragment.
+    // Quoted parenthesized estimator=(...) tokens need canonical classification
+    // when followed by a legal option or syntax fragment.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         "(^|[ ])(estimator[ ]*=[ ]*([^ ]+)[ ]+[^ ].*)$")
     if `_hddid_match' {
@@ -2814,11 +2609,8 @@ program define _hddid_parse_estopt_core, rclass
             exit
         }
     }
-    // Preserve exact raw echoes for glued method() payloads nested inside a
-    // malformed estimator-family token. These are not empty assignments
-    // followed by a separate method() option: the user supplied one malformed
-    // estimator token, so public guidance must preserve that exact token and
-    // must not leak the internal method() masking sentinel below.
+    // Preserve exact raw echoes for glued method() payloads inside malformed
+    // estimator-family tokens.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*method[ ]*[(][^)]*[)])([ ]|$)")
     if `_hddid_match' {
@@ -2851,10 +2643,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // Bare parenthesized estimator(method(...)) tokens are malformed
-    // estimator-family syntax in their own right. Preserve the exact token
-    // before any later method() masking so nested method(...) text does not
-    // leak sentinels or get reclassified as a real basis-family request.
+    // Preserve bare parenthesized estimator(method(...)) tokens before method()
+    // masking.
     local _hddid_match = regexm(`"`_hddid_opts_raw_orig'"', ///
         `"(^|[ ])(estimator[ ]*[(][ ]*method[ ]*[(][^)]*[)][ ]*[)])([ ]|$)"')
     if `_hddid_match' {
@@ -2934,9 +2724,8 @@ program define _hddid_parse_estopt_core, rclass
             exit
         }
     }
-    // estimator-style token detection should not peek inside legitimate
-    // option payloads like method(...), which the main syntax/method-domain
-    // validation handles later using the option's own contract.
+    // Do not inspect legitimate option payloads like method() here; those are
+    // validated separately.
     local _hddid_opts_raw = ///
         regexr(`"`_hddid_opts_raw'"', ///
         "method[ ]*[(][^)]*[)]", "method(__hddid_method_payload__)")
@@ -3011,10 +2800,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // Keep quoted nonparenthesized estimator assignments with glued suffix text
-    // intact before quote-stripping. Otherwise estimator="ra"foo or
-    // estimator='ipw'foo is rewritten to de-quoted estimator=rafoo /
-    // estimator=ipwfoo in the public invalid-line echo.
+    // Preserve quoted estimator assignments with glued suffix text before
+    // quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted_orig'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*["][^"]*["][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -3050,7 +2837,7 @@ program define _hddid_parse_estopt_core, rclass
     if `_hddid_match' {
         local _hddid_raw = strtrim(regexs(2))
         local _hddid_est_lc = lower(strtrim(regexs(3)))
-        // Preserve the user's exact token shape/case in the public error echo.
+        // Preserve the exact token shape and case in the error echo.
         local _hddid_raw_pos = strpos( ///
             lower(`"`_hddid_opts_raw_quoted_orig'"'), lower(`"`_hddid_raw'"'))
         if `_hddid_raw_pos' > 0 {
@@ -3133,9 +2920,7 @@ program define _hddid_parse_estopt_core, rclass
         exit
     }
     // Preserve exact raw echoes for quoted parenthesized alias assignments
-    // that carry glued suffix text. Otherwise tokens like ra=("ipw")foo or
-    // ipw=('aipw')foo are rewritten to de-quoted alias text in public
-    // guidance even though the caller supplied one malformed quoted token.
+    // with glued suffix text.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted_orig'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*[(][ ]*["][^"]*["][ ]*[)][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -3155,10 +2940,7 @@ program define _hddid_parse_estopt_core, rclass
         exit
     }
     // Preserve exact raw echoes for quoted nonparenthesized alias assignments
-    // before later quote-stripping. Otherwise ra='method(Pol)' or
-    // ra="method(Pol)" is rewritten to de-quoted alias text, and the
-    // internal method() masking sentinel can leak into public guidance even
-    // though the caller supplied quoted malformed estimator-family input.
+    // before quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted_orig'"', ///
         `"(^|[ ])((r|ra|i|ip|ipw|a|ai|aip|aipw)[ ]*=[ ]*["]([^"]*)["])([ ]|$)"')
     if `_hddid_match' {
@@ -3215,10 +2997,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // Keep quoted nonparenthesized estimator assignments with glued suffix text
-    // intact before quote-stripping. Otherwise estimator="ra"foo or
-    // estimator='ipw'foo is rewritten to de-quoted estimator=rafoo /
-    // estimator=ipwfoo in the public invalid-line echo.
+    // Preserve quoted estimator assignments with glued suffix text before
+    // quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted_orig'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*["][^"]*["][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -3237,10 +3017,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // Keep quoted nonparenthesized estimator assignments with glued suffix
-    // text intact before quote-stripping. Otherwise estimator="ra"foo or
-    // estimator='ipw'foo is rewritten to de-quoted estimator=rafoo /
-    // estimator=ipwfoo in the public invalid-line echo.
+    // Preserve quoted estimator assignments with glued suffix text before
+    // quote-stripping.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(estimator[ ]*=[ ]*["][^"]*["][^ ]+)([ ]|$)"')
     if `_hddid_match' {
@@ -3370,12 +3148,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment_parenthesized"
         exit
     }
-    // An empty estimator= assignment must fail on the malformed estimator
-    // token itself. The next legitimate command option (for example q() or
-    // a bare switch like verbose) is not an estimator payload and must not
-    // be swallowed into the raw echo. Respect Stata's legal option
-    // abbreviations here too: estimator= alp(0.1) is still an empty
-    // estimator assignment followed by alpha(), not a longer estimator token.
+    // An empty estimator= assignment fails on its own. Subsequent legal
+    // options are not part of the malformed token.
     local _hddid_match = regexm(`"`_hddid_opts_raw'"', ///
         "(^|[ ])(estimator[ ]*=)[ ]*((`_hddid_estopt_lparen_follow'))")
     if `_hddid_match' {
@@ -3527,14 +3301,10 @@ program define _hddid_parse_estopt_core, rclass
             local _hddid_payload = ///
                 lower(strtrim(substr(`"`_hddid_raw'"', `_hddid_eq' + 1, .)))
         }
-        // Alias-style estimator assignments (`ra=`, `ipw=`, `aipw=`) should
-        // classify before any later bare parenthesized estimator token on the
-        // RHS (for example `ra= a(0.1)`). Otherwise the parser rewrites the
-        // user's malformed alias assignment into a different apparent token.
-        // Still trim only when the RHS is truly the head of a separate legal
-        // hddid option, bare switch, or Stata syntax fragment.
+        // Alias-style assignments classify before later bare parenthesized
+        // tokens on the RHS.
         local _hddid_alias_lparen_follow ///
-            "^(c|cf|cfo|cfor|cform|cforma|cformat|ci|cit|city|cityp|citype|p|pf|pfo|pfor|pform|pforma|pformat|s|sf|sfo|sfor|sform|sforma|sformat|fvwr|fvwra|fvwrap|fvwrapo|fvwrapon|tr|tre|trea|treat|x|z|z0|k|l|le|lev|leve|level|m|me|met|meth|metho|method|q|alp|alph|alpha|pi|pih|piha|pihat|phi1|phi1h|phi1ha|phi1hat|phi0|phi0h|phi0ha|phi0hat|seed|sep|sepa|separ|separa|separat|separato|separator|depn|depna|depnam|depname|nb|nbo|nboo|nboot)[ ]*[(]"
+            "^(c|cf|cfo|cfor|cform|cforma|cformat|ci|cit|city|cityp|citype|p|pf|pfo|pfor|pform|pforma|pformat|s|sf|sfo|sfor|sform|sforma|sformat|fvwr|fvwra|fvwrap|fvwrapo|fvwrapon|tr|tre|trea|treat|x|z|z0|k|l|le|lev|leve|level|m|me|met|meth|metho|method|q|alp|alph|alpha|pi|pih|piha|pihat|phi1|phi1h|phi1ha|phi1hat|phi0|phi0h|phi0ha|phi0hat|seed|sep|sepa|separ|separa|separat|separato|separator|depn|depna|depnam|depname|nb|nbo|nboo|nboot|stage1|stage1p|stage1pe|stage1pen|stage1pena|stage1penal|stage1penalt|stage1penalty)[ ]*[(]"
         local _hddid_alias_bare_follow ///
             "^(ab|abb|abbr|abbre|abbrev|allb|allba|allbas|allbase|allbasel|allbasele|allbaselev|allbaseleve|allbaselevel|allbaselevels|b|be|bet|beta|basel|basele|baselev|baseleve|baselevel|baselevels|cns|cnsr|cnsre|cnsrep|cnsrepo|cnsrepor|cnsreport|cod|codi|codin|coding|coefl|coefle|coefleg|coeflege|coeflegen|coeflegend|com|comp|compa|compar|compare|e|ef|efo|efor|eform|empty|emptyc|emptyce|emptycel|emptycell|emptycells|f|fi|fir|firs|first|fu|ful|full|fullc|fullcn|fullcns|fullcnsr|fullcnsre|fullcnsrep|fullcnsrepo|fullcnsrepor|fullcnsreport|fvl|fvla|fvlab|fvlabe|fvlabel|ls|lst|lstr|lstre|lstret|lstretch|ma|mar|mark|markd|markdo|markdow|markdown|noa|noab|noabb|noabbr|noabbre|noabbrev|not|nota|notab|notabl|notable|noempty|noemptyc|noemptyce|noemptycel|noemptycell|noemptycells|noo|noom|noomi|noomit|noomitt|noomitte|noomitted|nop|nopv|nopva|nopval|nopvalu|nopvalue|nopvalues|o|om|omi|omit|omitt|omitte|omitted|pl|plu|plus|se|sel|sele|seleg|selege|selegen|selegend|noci|nofv|nofvl|nofvla|nofvlab|nofvlabe|nofvlabel|noh|nohe|nohea|nohead|noheade|noheader|nols|nolst|nolstr|nolstre|nolstret|nolstretc|nolstretch|nof|nofi|nofir|nofirs|nofirst|ver|vers|versu|versus|verb|verbo|verbos|verbose|vsq|vsqu|vsqui|vsquis|vsquish)($|[ ])"
         local _hddid_alias_syntax_follow ///
@@ -3552,11 +3322,8 @@ program define _hddid_parse_estopt_core, rclass
         return local form "assignment"
         exit
     }
-    // Quoted parenthesized bare estimator-family tokens are the same
-    // malformed replay/estimation switches as bare (ra)/(ipw)/(aipw). Classify
-    // them before the generic syntax fallback so quotes do not downgrade a
-    // fixed-AIPW contract violation into the generic "replay does not accept
-    // options" message.
+    // Quoted parenthesized estimator-family tokens are classified before the
+    // generic syntax fallback.
     local _hddid_match = regexm(`"`_hddid_opts_raw_quoted'"', ///
         `"(^|[ ])(([(][ ]*["](r|ra|i|ip|ipw|a|ai|aip|aipw)["][ ]*[)]))([ ]|$)"')
     if `_hddid_match' {
@@ -3845,8 +3612,8 @@ program define _hddid_parse_precomma_estexpr, rclass
         return local form `"`r(form)'"'
         exit
     }
-    // A bare depvar named ra/ipw/aipw is legal before the comma. Only
-    // precomma wrapper/assignment spellings should be reclassified here.
+    // A depvar named ra/ipw/aipw is legal; only precomma assignment spellings
+    // are reclassified.
     if `"`r(canonical)'"' != "" & `"`r(form)'"' != "bare" {
         return local canonical `"`r(canonical)'"'
         return local raw `"`r(raw)'"'
@@ -4073,8 +3840,7 @@ program define _hddid_show_esttoken_safe
         local _hddid_disp `"`_hddid_raw'"'
     }
 
-    // Bare single-quoted tokens like 'ra' must be reported as data, not fed
-    // back through a nested helper call that Stata reparses as command text.
+    // Single-quoted tokens are reported as data, not reparsed as command text.
     di as error "{bf:hddid}: estimator-style tokens are not supported as positional arguments: " ///
         as text `"`_hddid_disp'"'
     di as error "  Reason: {bf:method()} selects only the sieve basis family; it is not an AIPW, IPW, or RA estimator switch"
@@ -4242,9 +4008,7 @@ program define _hddid_load_estimate_sidecar
     local _estimate_run_rc = _rc
     local _estimate_prog_rc = .
     if `_estimate_run_rc' == 0 {
-        // Estimation must bind to the exact sibling sidecar just loaded above.
-        // A bare _hddid_estimate call can otherwise autoload a different
-        // adopath copy after source-run and mix bundles on the entry path.
+        // Bind estimation to the exact sibling sidecar just loaded.
         capture program list _hddid_estimate
         local _estimate_prog_rc = _rc
     }
@@ -4300,9 +4064,7 @@ program define _hddid_load_display_sidecar
     local _display_run_rc = _rc
     local _display_prog_rc = .
     if `_display_run_rc' == 0 {
-        // Replay must bind to the exact sibling sidecar just loaded above.
-        // A bare _hddid_display call can otherwise autoload a different
-        // adopath copy after source-run and mask a malformed sibling file.
+        // Bind replay to the exact sibling sidecar just loaded.
         capture program list _hddid_display
         local _display_prog_rc = _rc
     }
@@ -4341,10 +4103,10 @@ end
 
 program define _hddid_pfb
     version 16
-    di as error "{bf:hddid}: predict is not supported."
-    di as error "  Reason: hddid posts debiased estimates and confidence objects for beta and the omitted-intercept z-varying surface"
-    di as error "  on the stored evaluation grid, but it does not define observation-level fitted values."
-    di as error "  Inspect {bf:e(CIpoint)} for the published pointwise intervals and {bf:e(CIuniform)} for the published nonparametric interval object."
+    di as error "{bf:hddid}: predict fallback stub invoked (hddid_p.ado is unavailable)."
+    di as error "  Reason: observation-level fitted values require the full {bf:hddid_p} dispatcher."
+    di as error "  Ensure the {bf:hddid} package is fully installed, then use {bf:predict} {it:newvar} {bf:[, xb|fz|tau]}."
+    di as error "  For aggregate inference, inspect {bf:e(CIpoint)} and {bf:e(CIuniform)} plus {bf:e(a0)} + {bf:e(gdebias)} for the full {bf:f(z)} level."
     exit 198
 end
 
@@ -4381,14 +4143,12 @@ program define _hddid_validate_predict_stub, rclass
         }
     }
     else if `_stub_run_rc' == 0 {
-        // Validate the exact sibling file loaded above. A bare hddid_p call
-        // can autoload a different adopath copy after source-run, which would
-        // mask a malformed sibling file instead of fail-closing.
+        // Validate the exact sibling file loaded above.
         capture program list `_stub_prog_name'
         local _stub_prog_rc = _rc
         if `_stub_prog_rc' == 0 {
-            // Current unsupported-postestimation stubs fail closed with rc=198
-            // plus guidance when no active hddid results are available.
+            // Unsupported-postestimation stubs fail closed with rc=198 when no
+            // active results are available.
             capture `_stub_prog_name'
             local _stub_call_rc = _rc
         }
@@ -4471,14 +4231,12 @@ program define _hddid_validate_estat_stub
     local _stub_prog_rc = .
     local _stub_call_rc = .
     if `_stub_run_rc' == 0 {
-        // Validate the exact sibling file loaded above. A bare hddid_estat
-        // call can autoload a different adopath copy after source-run, which
-        // would mask a malformed sibling file instead of fail-closing.
+        // Validate the exact sibling file loaded above.
         capture program list hddid_estat
         local _stub_prog_rc = _rc
         if `_stub_prog_rc' == 0 {
-            // Current unsupported-postestimation stubs fail closed with rc=198
-            // plus guidance when no active hddid results are available.
+            // Unsupported-postestimation stubs fail closed with rc=198 when no
+            // active results are available.
             capture hddid_estat
             local _stub_call_rc = _rc
         }
@@ -4518,6 +4276,7 @@ end
 program define _hddid_publish_results, eclass
     syntax , B(name) V(name) XDEBIAS(name) GDEBIAS(name) STDX(name) ///
         STDG(name) TC(name) CIPOINT(name) CIUNIFORM(name) ///
+        TCSUP(name) CIUNIFORMSUP(name) ///
         ESAMPLE(varname) NFINAL(integer) NPRETRIM(integer) ///
         NOUTER(integer) K(integer) P(integer) Q(integer) QQ(integer) ///
         ALPHA(real) NBOOT(string) NTRIMMED(integer) ///
@@ -4527,12 +4286,12 @@ program define _hddid_publish_results, eclass
         TREATVAR(string) ZVAR(string) CMDLINE(string asis) ORIGORDER(varname) ///
         FIRSTSTAGE(string) ///
         PROPENSITY(integer) OUTCOME(integer) SEED(string) ///
-        ZSUPPORTMIN(real) ZSUPPORTMAX(real) [PREDICTSTUB(string)]
+        ZSUPPORTMIN(real) ZSUPPORTMAX(real) ///
+        [STAGE1penalty(string) PREDICTSTUB(string) LAM1ratio(string asis) LAM2ratio(string asis)]
 
     local firststage = lower(strtrim(`"`firststage'"'))
-    // Internal producer calls sometimes pass string options with explicit
-    // quote wrappers. Those wrappers do not change the realized role/fold
-    // metadata and should not trigger spurious posting-time contract failures.
+    // Quote wrappers in internal producer calls do not affect metadata and
+    // should not trigger spurious posting-time failures.
     local depvar_display = ///
         strtrim(subinstr(subinstr(`"`depvarrole'"', char(34), "", .), ///
         char(39), "", .))
@@ -4703,14 +4462,14 @@ program define _hddid_publish_results, eclass
     capture confirm number `nboot_input'
     if _rc != 0 {
         di as error "{bf:hddid}: internal result posting requires nboot() >= 2"
-        di as error "  Reason: the published {bf:e(tc)} object is the rowwise-envelope lower/upper critical-value pair behind {bf:e(CIuniform)}, so current result posting needs at least two Gaussian-bootstrap draws to identify both endpoints"
+        di as error "  Reason: the published {bf:e(tc)} object is the paper-Theorem 5.2 sup-quantile lower/upper critical-value pair behind {bf:e(CIuniform)}, so current result posting needs at least two Gaussian-bootstrap draws to identify both endpoints"
         di as error "  Posting found malformed nboot() = {bf:`nboot_input'}"
         exit 498
     }
     local nboot = real(`"`nboot_input'"')
     if missing(`nboot') | `nboot' < 2 | `nboot' != floor(`nboot') {
         di as error "{bf:hddid}: internal result posting requires nboot() >= 2"
-        di as error "  Reason: the published {bf:e(tc)} object is the rowwise-envelope lower/upper critical-value pair behind {bf:e(CIuniform)}, so current result posting needs at least two Gaussian-bootstrap draws to identify both endpoints"
+        di as error "  Reason: the published {bf:e(tc)} object is the paper-Theorem 5.2 sup-quantile lower/upper critical-value pair behind {bf:e(CIuniform)}, so current result posting needs at least two Gaussian-bootstrap draws to identify both endpoints"
         di as error "  Posting found nboot() = " %9.0g `nboot'
         exit 498
     }
@@ -4814,7 +4573,7 @@ program define _hddid_publish_results, eclass
         if `_cmdline_has_nboot_pub' & `_cmdline_dup_nboot_pub' {
             di as error "{bf:hddid}: stored cmdline must encode nboot() provenance at most once"
             di as error "  Posting found duplicated {bf:nboot()} provenance in {bf:cmdline()} = {bf:`cmdline'}"
-            di as error "  Reason: current saved results must publish one atomic Gaussian-bootstrap replication count behind {bf:e(tc)} and {bf:e(CIuniform)} before replay/postestimation consume it"
+            di as error "  Reason: current saved results must publish one atomic Gaussian-bootstrap replication count behind the sup-quantile {bf:e(tc)} / {bf:e(CIuniform)} interval object before replay/postestimation consume it"
             exit 498
         }
         if `_cmdline_has_nboot_pub' & `_cmdline_nboot_ok_pub' == 0 {
@@ -4827,7 +4586,7 @@ program define _hddid_publish_results, eclass
             `_cmdline_nboot_value_pub' != `nboot' {
             di as error "{bf:hddid}: stored cmdline nboot() provenance must match posted nboot()"
             di as error "  Posting found {bf:cmdline()} = {bf:`cmdline'} but machine-readable {bf:nboot()} = {bf:`nboot'}"
-            di as error "  Reason: current saved results must publish one atomic Gaussian-bootstrap replication count behind {bf:e(tc)} and {bf:e(CIuniform)}"
+            di as error "  Reason: current saved results must publish one atomic Gaussian-bootstrap replication count behind the sup-quantile {bf:e(tc)} / {bf:e(CIuniform)} interval object"
             exit 498
         }
         local _cmdline_has_alpha_pub = ///
@@ -5149,8 +4908,7 @@ program define _hddid_publish_results, eclass
             `"`_cmdline_method_value_pub'"' == `"`_stored_method_cmdline_pub'"') & ///
             (`_cmdline_has_q_pub' == 0 | ///
             `_cmdline_q_value_pub' == `_stored_q_cmdline_pub') {
-            // Explicit cmdline method()/q() provenance matches the posted
-            // machine-readable metadata. Continue to matrix/public-surface checks.
+            // Cmdline method()/q() provenance matches posted metadata.
         }
         else if `_cmdline_has_method_pub' | `_cmdline_has_q_pub' {
             di as error "{bf:hddid}: stored cmdline method()/q() provenance must match posted method()/q()"
@@ -5159,16 +4917,34 @@ program define _hddid_publish_results, eclass
             exit 498
         }
     }
+    // tc() carries the rowwise-envelope lower/upper pair produced by
+    // _hddid_aggregate_folds(); it is retained for inspection but published
+    // downstream as e(tc_env) (not as e(tc)) because the paper Theorem 5.2
+    // canonical band is the sup-quantile version.
     if rowsof(`tc') != 1 | colsof(`tc') != 2 | ///
         missing(`tc'[1,1]) | missing(`tc'[1,2]) {
         di as error "{bf:hddid}: internal result posting requires finite tc() as a 1 x 2 lower/upper critical-value rowvector"
-        di as error "  Reason: the published {bf:e(tc)} object records the Gaussian-bootstrap lower/upper critical-value provenance behind {bf:e(CIuniform)}"
+        di as error "  Reason: the published {bf:e(tc_env)} object records the rowwise-envelope Gaussian-bootstrap critical-value provenance behind {bf:e(CIuniform_env)} (legacy backward-compatibility interval)"
         exit 498
     }
     if `tc'[1,1] > `tc'[1,2] {
         di as error "{bf:hddid}: internal result posting requires tc()[1,1] <= tc()[1,2]"
-        di as error "  Reason: the published {bf:e(tc)} object is ordered as (lower, upper)"
+        di as error "  Reason: the published {bf:e(tc_env)} object is ordered as (lower, upper)"
         di as error "  Posting found tc() = (" %12.8g `tc'[1,1] ", " %12.8g `tc'[1,2] ")"
+        exit 498
+    }
+    // tcsup() carries the paper-Theorem 5.2 sup-quantile critical-value pair,
+    // promoted to e(tc) / e(CIuniform) as the canonical uniform band.
+    if rowsof(`tcsup') != 1 | colsof(`tcsup') != 2 | ///
+        missing(`tcsup'[1,1]) | missing(`tcsup'[1,2]) {
+        di as error "{bf:hddid}: internal result posting requires finite tcsup() as a 1 x 2 lower/upper critical-value rowvector"
+        di as error "  Reason: the published {bf:e(tc)} object records the paper-Theorem 5.2 sup-quantile Gaussian-bootstrap critical-value provenance behind {bf:e(CIuniform)}"
+        exit 498
+    }
+    if `tcsup'[1,1] > `tcsup'[1,2] {
+        di as error "{bf:hddid}: internal result posting requires tcsup()[1,1] <= tcsup()[1,2]"
+        di as error "  Reason: the published {bf:e(tc)} object is ordered as (lower, upper)"
+        di as error "  Posting found tcsup() = (" %12.8g `tcsup'[1,1] ", " %12.8g `tcsup'[1,2] ")"
         exit 498
     }
     if rowsof(`gdebias') != 1 | colsof(`gdebias') != `qq' {
@@ -5187,8 +4963,15 @@ program define _hddid_publish_results, eclass
     }
     if rowsof(`ciuniform') != 2 | colsof(`ciuniform') != `qq' {
         di as error "{bf:hddid}: internal result posting requires CIuniform() as a 2 x qq matrix"
-        di as error "  Reason: the published uniform interval object stores lower/upper rows over the posted z0() grid"
+        di as error "  Reason: the legacy rowwise-envelope uniform interval object (published as {bf:e(CIuniform_env)}) stores lower/upper rows over the posted z0() grid"
         di as error "  Posting found CIuniform() with shape " rowsof(`ciuniform') " x " colsof(`ciuniform') ///
+            " but qq() = `qq'"
+        exit 498
+    }
+    if rowsof(`ciuniformsup') != 2 | colsof(`ciuniformsup') != `qq' {
+        di as error "{bf:hddid}: internal result posting requires CIuniformsup() as a 2 x qq matrix"
+        di as error "  Reason: the published sup-quantile uniform interval object (canonical {bf:e(CIuniform)}) stores lower/upper rows over the posted z0() grid"
+        di as error "  Posting found CIuniformsup() with shape " rowsof(`ciuniformsup') " x " colsof(`ciuniformsup') ///
             " but qq() = `qq'"
         exit 498
     }
@@ -5567,10 +5350,9 @@ program define _hddid_publish_results, eclass
         }
         local ++_kk
     }
-    // xvars() arrives from the estimation path already canonicalized on the
-    // split-relevant sample that fixed the outer fold map. Recomputing that
-    // order on the narrower retained esample would relabel beta coordinates
-    // after trimming or score-sample narrowing without changing the model.
+    // xvars() is already canonicalized on the split-relevant sample.
+    // Recomputing on the retained esample would relabel beta coordinates
+    // without changing the model.
     local xvars : list retokenize xvars
     matrix colnames `b' = `xvars'
     matrix coleq `b' = beta
@@ -5598,6 +5380,21 @@ program define _hddid_publish_results, eclass
         ereturn scalar propensity_nfolds = `propensity'
         ereturn scalar outcome_nfolds = `outcome'
     }
+    // P1-b: persist stage1penalty mode so replay/postestimation can audit
+    // whether the published Stage-1 nuisance lassos penalized psi(Z).
+    local stage1penalty = strtrim(strlower(`"`stage1penalty'"'))
+    if `"`stage1penalty'"' == "" {
+        local stage1penalty "full"
+    }
+    if !inlist(`"`stage1penalty'"', "full", "partial") {
+        di as error "{bf:hddid}: internal result posting requires stage1penalty() in {bf:full, partial}"
+        di as error "  Reason: {bf:e(stage1penalty)} records whether the published Stage-1 lassos for {bf:pi(W)}, {bf:Phi1(W)}, {bf:Phi0(W)} penalized the low-dimensional sieve basis psi(Z) columns alongside the high-dimensional X columns; only {bf:full} (penalize all of W) and {bf:partial} (notpen the psi(Z) columns) are supported"
+        di as error "  Posting found stage1penalty() = {bf:`stage1penalty'}"
+        exit 498
+    }
+    if `"`firststage'"' == "internal" {
+        ereturn local stage1penalty `"`stage1penalty'"'
+    }
     ereturn scalar secondstage_nfolds = `secondstage'
     ereturn scalar mmatrix_nfolds = `mmatrix'
     ereturn scalar clime_nfolds_cv_max = `climemax'
@@ -5611,26 +5408,35 @@ program define _hddid_publish_results, eclass
 
     matrix colnames `xdebias' = `xvars'
     matrix colnames `stdx' = `xvars'
-    matrix colnames `tc' = tc_lower tc_upper
+    // P1-a: paper Theorem 5.2 sup-quantile is the canonical uniform band.
+    // Promote `tcsup' / `ciuniformsup' to `e(tc)' / `e(CIuniform)' and retain
+    // the rowwise-envelope variants as `e(tc_env)' / `e(CIuniform_env)' for
+    // backward-compatible inspection (not paper-correct for joint coverage).
+    matrix colnames `tc' = tc_env_lower tc_env_upper
+    matrix colnames `tcsup' = tc_lower tc_upper
 
-    // Reuse one z0 stripe across all nonparametric outputs so replay and
-    // postestimation code align columns by the same evaluation labels.
+    // Reuse one z0 stripe across all nonparametric outputs for column
+    // alignment.
     mata: _hddid_store_z0_colstripe("`zgrid'", "_z0_names")
     matrix colnames `gdebias' = `_z0_names'
     matrix colnames `stdg' = `_z0_names'
     matrix colnames `ciuniform' = `_z0_names'
+    matrix colnames `ciuniformsup' = `_z0_names'
 
     matrix rownames `cipoint' = lower upper
     matrix colnames `cipoint' = `xvars' `_z0_names'
     matrix rownames `ciuniform' = lower upper
+    matrix rownames `ciuniformsup' = lower upper
 
     ereturn matrix xdebias = `xdebias'
     ereturn matrix gdebias = `gdebias'
     ereturn matrix stdx = `stdx'
     ereturn matrix stdg = `stdg'
-    ereturn matrix tc = `tc'
+    ereturn matrix tc = `tcsup'
+    ereturn matrix tc_env = `tc'
     ereturn matrix CIpoint = `cipoint'
-    ereturn matrix CIuniform = `ciuniform'
+    ereturn matrix CIuniform = `ciuniformsup'
+    ereturn matrix CIuniform_env = `ciuniform'
 
     tempname _N_per_fold
     matrix `_N_per_fold' = J(1, `k', 0)
@@ -5668,6 +5474,52 @@ program define _hddid_publish_results, eclass
         `_clime_nfolds_cv_effective_max'
     ereturn matrix clime_nfolds_cv_per_fold = ///
         `_clime_nfolds_cv_per_fold'
+
+    // Stage-1 / Stage-2 lambda ratio diagnostics: per-fold value of
+    // lambda_CV / sqrt(log(p+q)/n_fold), the conventional rate from
+    // paper Assumption 8 (Stage-1) and Assumption 9 (Stage-2). The ratio
+    // is missing for the constant-W intercept-only path, the constant-DR
+    // shortcut, and the nofirst path because no penalized lasso is fit.
+    local _s1_ratio_count : word count `lam1ratio'
+    if `_s1_ratio_count' != 0 & `_s1_ratio_count' != `k' {
+        di as error "{bf:hddid}: internal result posting requires exactly k stage-1 lambda ratios"
+        di as error "  Reason: the published {bf:e(stage1_lambda_ratio)} contract is a 1 x k rowvector with one CV-lambda diagnostic per outer fold"
+        di as error "  Posting received k = `k' but lam1ratio() supplied `_s1_ratio_count' value(s)"
+        exit 498
+    }
+    local _s2_ratio_count : word count `lam2ratio'
+    if `_s2_ratio_count' != 0 & `_s2_ratio_count' != `k' {
+        di as error "{bf:hddid}: internal result posting requires exactly k stage-2 lambda ratios"
+        di as error "  Reason: the published {bf:e(stage2_lambda_ratio)} contract is a 1 x k rowvector with one CV-lambda diagnostic per outer fold"
+        di as error "  Posting received k = `k' but lam2ratio() supplied `_s2_ratio_count' value(s)"
+        exit 498
+    }
+    if `_s1_ratio_count' == `k' {
+        tempname _s1_ratio_mat
+        matrix `_s1_ratio_mat' = J(1, `k', .)
+        local _kk = 1
+        foreach _s1r_val of local lam1ratio {
+            if "`_s1r_val'" != "." {
+                matrix `_s1_ratio_mat'[1, `_kk'] = real("`_s1r_val'")
+            }
+            local ++_kk
+        }
+        matrix colnames `_s1_ratio_mat' = `_fold_names'
+        ereturn matrix stage1_lambda_ratio = `_s1_ratio_mat'
+    }
+    if `_s2_ratio_count' == `k' {
+        tempname _s2_ratio_mat
+        matrix `_s2_ratio_mat' = J(1, `k', .)
+        local _kk = 1
+        foreach _s2r_val of local lam2ratio {
+            if "`_s2r_val'" != "." {
+                matrix `_s2_ratio_mat'[1, `_kk'] = real("`_s2r_val'")
+            }
+            local ++_kk
+        }
+        matrix colnames `_s2_ratio_mat' = `_fold_names'
+        ereturn matrix stage2_lambda_ratio = `_s2_ratio_mat'
+    }
 
     tempname _z0_mat
     matrix `_z0_mat' = J(1, `qq', 0)
@@ -5722,8 +5574,7 @@ program define _hddid_cleanup_state
     capture macro drop HDDID_LASTISO_CALLER_RNG
     capture macro drop HDDID_LASTISO_INTERNAL_RNG
 
-    // Drop transient matrices/scalars from prior runs so estimation failures
-    // do not leak stale fold outputs into the next call.
+    // Drop transient matrices and scalars from prior runs.
     foreach _mat in ///
         __hddid_final_xdebias ///
         __hddid_final_gdebias ///
@@ -5731,9 +5582,12 @@ program define _hddid_cleanup_state
         __hddid_final_V ///
         __hddid_final_stdg ///
         __hddid_final_tc ///
+        __hddid_final_tc_sup ///
         __hddid_final_CIpoint ///
         __hddid_final_alpha ///
         __hddid_final_CIuniform ///
+        __hddid_final_CIuniform_sup ///
+        __hddid_aggregate_tc_sup ///
         __hddid_xdebias_k ///
         __hddid_stdx_k ///
         __hddid_vcovx_k ///
@@ -5771,10 +5625,7 @@ program define _hddid_cleanup_state
         }
     }
 
-    // Fold bridge state is created on the contiguous index block 1..K. When a
-    // failed wrapper call does not know the prior K, keep sweeping upward
-    // until the first empty index beyond the preflight bound so high-K stale
-    // state cannot survive just because K exceeded 1000 in an earlier run.
+    // Sweep beyond the preflight bound to clear high-K stale fold state.
     local _cleanup_i = `_cleanup_kmax' + 1
     local _cleanup_found = 1
     while `_cleanup_found' {
@@ -5806,9 +5657,7 @@ end
 
 
 capture mata: mata drop _hddid_canonical_group_counts()
-// When source-running via `run hddid.ado "<pkgdir>"`, preserve the explicit
-// package root so the subsequent command call can resolve sibling sidecars
-// even outside the project tree.
+// Preserve the explicit package root for source-run resolution.
 capture args _hddid_source_run_pkgdir
 if `"`_hddid_source_run_pkgdir'"' != "" {
     global HDDID_SOURCE_RUN_PKGDIR_PREV `"$HDDID_SOURCE_RUN_PKGDIR"'

@@ -164,11 +164,10 @@ program define _hddid_pst_cmdroles
         local _xrange_fail 0
         local _xraw = lower(strtrim(`"`_cmdline_xvars'"'))
         local _xraw : list retokenize _xraw
-        // Wildcard cmdline x() spellings are historical provenance once the
-        // result surface has already published the canonical beta-coordinate
-        // block in e(xvars). Do not let a wider current wildcard expansion
-        // (for example because today's data gained rep3) override that stored
-        // identity. Dataset-order ranges still remain live-data-dependent.
+        // Wildcard specifications in e(cmdline) x() are historical records
+        // once e(xvars) has published the canonical variable list. A broader
+        // wildcard expansion must not override the stored canonical names;
+        // variable-range expansions remain dependent on the dataset in memory.
         foreach _xraw_tok of local _xraw {
             if strpos(`"`_xraw_tok'"', "-") > 0 & regexm(`"`_xraw_tok'"', "^([^ -]+)-([^ -]+)$") {
                 local _xlo = regexs(1)
@@ -191,10 +190,10 @@ program define _hddid_pst_cmdroles
                     local _xrange_fail 1
                 }
                 else if `_post_role_data_present' {
-                    // With live data in memory, unab already resolved any
-                    // legal x(a-b) range against the dataset order. When the
-                    // data are still present, reuse the published xvars slice
-                    // for the unique matched endpoints.
+                    // When data are in memory, unab has already resolved
+                    // any variable range against dataset order. Reuse the
+                    // published e(xvars) slice between the uniquely matched
+                    // endpoints.
                     local _xlo_pos : list posof `"`_xlo_hit'"' in _xvars_cmd_expected
                     local _xhi_pos : list posof `"`_xhi_hit'"' in _xvars_cmd_expected
                     if `_xlo_pos' == 0 | `_xhi_pos' == 0 | ///
@@ -209,17 +208,13 @@ program define _hddid_pst_cmdroles
                     }
                 }
                 else {
-                    // After estimates use drops the live dataset, keep the
-                    // historical range only when the stored xvars block is
-                    // still coherent with any explicit numeric sequence in the
-                    // endpoint names (for example x1-x3 -> x1 x2 x3). This
-                    // preserves legal stored ranges like BUG-3238 while still
-                    // failing closed on gapped metadata such as x1-x3 with
-                    // published e(xvars)=x1 x3. Bare nonnumeric ranges such as
-                    // alpha-gamma stay ambiguous about the original dataset
-                    // order once the live data are gone, so current
-                    // postestimation must not reinterpret them from the stored
-                    // endpoint slice alone.
+                    // When data are no longer in memory, retain the stored
+                    // range only if the endpoint names encode an explicit
+                    // numeric sequence coherent with e(xvars). Numeric
+                    // sequences are verified element-wise against the stored
+                    // metadata; nonnumeric ranges are ambiguous without live
+                    // data and are not reinterpreted from the stored endpoints
+                    // alone.
                     local _xrange_sequence_checked 0
                     local _xrange_sequence_fail 0
                     if regexm(`"`_xlo_hit'"', "^(.*[^0-9]|)([0-9]+)([^0-9]*)$") {
@@ -359,10 +354,11 @@ program define _hddid_pst_cmdroles
     if `"`_cmdline_treat_cmp'"' != "" & `"`_cmdline_treat_cmp'"' != `"`_treat_cmd_expected'"' {
         local _cmdline_role_mismatch 1
     }
-    // e(cmdline) is only redundant role text once the saved result already
-    // publishes e(depvar_role)/e(treat)/e(xvars)/e(zvar). Omitting x() from
-    // that textual record is acceptable; mismatches still fail closed when a
-    // concrete x() mapping is present and contradicts the stored metadata.
+    // e(cmdline) provides a textual record of the original call. When
+    // e(depvar), e(treat), e(xvars), and e(zvar) are already stored,
+    // omission of x() from the textual record is acceptable; role
+    // mismatches are detected whenever a concrete x() specification
+    // contradicts the stored metadata.
     local _cmdline_xvars_sorted : list sort _cmdline_xvars_cmp
     local _xvars_cmd_expected_sorted : list sort _xvars_cmd_expected
     if `"`_cmdline_xvars_cmp'"' != "" & `"`_cmdline_xvars_sorted'"' != `"`_xvars_cmd_expected_sorted'"' {

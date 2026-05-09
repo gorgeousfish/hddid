@@ -87,22 +87,50 @@ This example uses the NSW (National Supported Work) job training experiment. The
 ```stata
 use nsw_dw, clear
 
-* deltay = re78 - re75 (change in real earnings, USD)
-* x()    = age educ black hisp married nodegree (demographic covariates)
-* z()    = re74 (1974 baseline earnings: nonparametric heterogeneity by prior income)
+* Standardize z before passing to method(Pol): raw re74 ranges 0-40 000,
+* which makes the polynomial basis column z^4 explode to ~2.4e+18 and
+* destabilizes f(z).  Working on the z-score keeps f(z) on the outcome's
+* natural order of magnitude.
+egen double re74_std = std(re74)
+
+* Shuffle rows before calling hddid: the shipped nsw_dw.dta is sorted by
+* treat (treated rows first), and hddid's outer split is a contiguous
+* row-order block on whatever row order the dataset carries at call time.
+* Without shuffling, the outer split puts all treated observations into the
+* first fold and leaves later folds zero-treated, which breaks stage-1
+* propensity CV and triggers downstream sieve-rank failures.  Any
+* reproducible randomization removes that order dependence; hddid itself
+* still uses seed() for its internal draws.
+set seed 20260420
+gen double _shuf = runiform()
+sort _shuf
+drop _shuf
+
+* deltay   = re78 - re75 (change in real earnings, USD)
+* x()      = age educ black hisp married nodegree (demographic covariates)
+* z()      = re74_std (standardized 1974 baseline earnings; original re74
+*            mean and SD are printed below so z0 can be interpreted on the
+*            raw-dollar scale)
+summarize re74
 
 * Estimate: treatment effect of NSW training, heterogeneous by baseline earnings
 * No Python needed (p=6 uses scalar CLIME path)
+* k=2 keeps each fold near 220 obs, so after the roughly 60 propensity-trim
+* drops every retained fold stays >= 180 obs and the q=4 Pol sieve basis
+* keeps its full rank 5.  k=3 on this sample size can push the smallest
+* retained fold below that threshold and trigger sieve rank-deficiency.
 set seed 42
-hddid deltay, treat(treat) x(age educ black hisp married nodegree) z(re74) ///
-    method(Pol) q(4) k(3) z0(0 2000 5000 10000) nboot(500) alpha(0.1)
+hddid deltay, treat(treat) x(age educ black hisp married nodegree) z(re74_std) ///
+    method(Pol) q(4) k(2) z0(-0.5 0 0.5 1 2) nboot(500) alpha(0.1)
 
 * Debiased estimates: beta for each demographic covariate
 matrix list e(xdebias), format(%9.2f)
 matrix list e(stdx),    format(%9.2f)
 
-* Nonparametric ATT component at z0 evaluation points
-* f(re74): how treatment effect varies with 1974 baseline earnings
+* Nonparametric ATT component at z0 evaluation points (in z-score units)
+* f(re74_std): how treatment effect varies with 1974 baseline earnings,
+* with z0 = -0.5, 0, 0.5, 1, 2 corresponding to roughly
+*   mean(re74) + z0 * sd(re74)  in raw-dollar terms
 matrix list e(gdebias), format(%9.2f)
 matrix list e(z0),      format(%9.2f)
 matrix list e(CIpoint), format(%9.2f)
@@ -116,6 +144,8 @@ summarize tau_hat
 
 This example replicates the empirical application in the original paper (Ning, Peng & Tao 2020). The Fair Minimum Wage Act of 2007 raised the federal minimum wage in three steps (2007–2009). Treated states are those where the federal increase was binding (state minimum wage ≤ $5.15 before the Act). The outcome is the change in state unemployment rate. The nonparametric variable `prior_unem` allows the unemployment response to differ flexibly by a state's pre-crisis labor market slack — tighter labor markets may respond differently to wage floors.
 
+> **Small-sample caveat.** With $n=50$, $p=7$, the effective parameter space is close to $n/4$, so the Lasso/CLIME step is near the limit of its stability envelope. We use `method(Tri)` rather than `method(Pol)` here because the trigonometric basis is inherently bounded on its support, which prevents the polynomial high-order term `z^q` from dominating `f(z)` on a narrow `prior_unem` range (3.3 to 7.6). With `method(Pol) q(4)` on this dataset, the fitted nonparametric constant `e(a0)` exceeds 900 in absolute value and the reported `f(z)` is drowned by the sieve's own cancellation; `method(Tri) q(4)` keeps `e(a0)` below 10 and the reported `f(z)` on the outcome's natural scale. Expect wider bootstrap intervals than in the simulations, and treat this example as a published-application replication rather than a recommended sample-size regime.
+
 **Data:** `minwage_state.dta` — 50 U.S. states (17 treated, 33 control)
 
 ```stata
@@ -126,19 +156,22 @@ use minwage_state, clear
 * z()        = prior_unem (2004 unemployment rate: nonparametric labor-market heterogeneity)
 * treat      = 1 if federal minimum wage increase was binding in 2007
 
+* Use method(Tri) so f(prior_unem) stays on the outcome scale.
+* z0(4.5 5.5) stays safely inside the data support [3.3, 7.6];
+* evaluating at the extreme boundaries amplifies edge bias on n=50.
 set seed 42
 hddid deltay, treat(treat) ///
     x(gdp_pc_2006 mfg_share union_rate educ_ba poverty_rate teen_share south) ///
     z(prior_unem) ///
-    method(Pol) q(4) k(2) ///
-    z0(3.5 4.5 5.5 6.5) nboot(500) alpha(0.1)
+    method(Tri) q(4) k(2) ///
+    z0(4.5 5.5) nboot(500) alpha(0.1)
 
 * Debiased beta: effect of each state covariate on treatment heterogeneity
 matrix list e(xdebias), format(%9.4f)
 matrix list e(stdx),    format(%9.4f)
 
 * Nonparametric component: how wage-floor effect varies with baseline unemployment
-* f(prior_unem): unemployment response at z0 = 3.5, 4.5, 5.5, 6.5
+* f(prior_unem): unemployment response at z0 = 4.5 (~median) and 5.5 (~Q3)
 matrix list e(gdebias), format(%9.4f)
 matrix list e(CIpoint), format(%9.4f)
 ```
@@ -186,6 +219,8 @@ matrix list e(xdebias), format(%9.4f)
 ```
 
 ### DGP2: Heteroscedastic correlated-X design (requires Python for p > 1)
+
+DGP2 multiplies the noise by `(z/sqrt(2) + x1/sqrt(2))`, so a single draw of `beta_1` can land 20 to 25 percent off the truth of 1.0 while still having a 95% CI that covers it. Across 20 Monte Carlo replications at `n=500, p=1`, mean `beta_1` is 1.00 with empirical 95% CI coverage of 95%, so treat any single-seed deviation as sampling variability rather than systematic bias.
 
 ```stata
 * AR(1)-correlated covariates, heteroscedastic baseline; true beta_1 = 1.0

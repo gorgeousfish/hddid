@@ -3665,7 +3665,7 @@ program define hddid_estat
             di as error "          No studentized Gaussian-bootstrap draws were used for the published nonparametric interval object."
         }
         else {
-            di as error "  Reason: current hddid results publish the significance level behind the posted {bf:e(CIpoint)} object and the realized {bf:e(tc)}/{bf:e(CIuniform)} interval object for the beta and omitted-intercept z-varying coordinates."
+            di as error "  Reason: current hddid results publish the significance level behind the posted {bf:e(CIpoint)} object and the realized {bf:e(tc)}/{bf:e(CIuniform)} interval object for the beta and nonparametric f(z) coordinates."
         }
         exit 498
     }
@@ -3866,7 +3866,7 @@ program define hddid_estat
         if `_cmdline_method_mismatch' | `_cmdline_q_mismatch' {
             di as error "{bf:hddid}: current results with stored e(cmdline) method()/q() provenance require stored e(method) and e(q) to match"
             di as error "  Current postestimation guidance found {bf:e(cmdline)} = {bf:`_cmdline'} but stored {bf:e(method)} = {bf:`_stored_method_cmdline'} and {bf:e(q)} = {bf:`_stored_q_cmdline'}."
-            di as error "  Reason: current hddid results publish sieve-basis provenance through both the successful-call record and the machine-readable {bf:e(method)} / {bf:e(q)} metadata behind the realized beta and omitted-intercept z-varying surface."
+            di as error "  Reason: current hddid results publish sieve-basis provenance through both the successful-call record and the machine-readable {bf:e(method)} / {bf:e(q)} metadata behind the realized beta and nonparametric f(z) surface."
             exit 498
         }
     }
@@ -3961,7 +3961,7 @@ program define hddid_estat
                 if `"`_cmdline_method'"' != `"`_method'"' {
                     di as error "{bf:hddid}: current results with stored e(cmdline) method() provenance require stored e(method) to match"
                     di as error "  Current postestimation guidance found {bf:e(cmdline)} = {bf:`_cmdline'} but stored {bf:e(method)} = {bf:`_method'}."
-                    di as error "  Reason: current hddid results publish the sieve-basis family through both the successful-call record and the machine-readable {bf:e(method)} label behind the realized beta/omitted-intercept z-varying surface."
+                    di as error "  Reason: current hddid results publish the sieve-basis family through both the successful-call record and the machine-readable {bf:e(method)} label behind the realized beta/nonparametric f(z) surface."
                     exit 498
                 }
             }
@@ -3975,7 +3975,7 @@ program define hddid_estat
                 if `_q' != `_cmdline_q_value' {
                     di as error "{bf:hddid}: current results with stored e(cmdline) q() provenance require stored e(q) to match"
                     di as error "  Current postestimation guidance found {bf:e(cmdline)} = {bf:`_cmdline'} but stored {bf:e(q)} = {bf:`_q'}."
-                    di as error "  Reason: current hddid results publish the sieve-order provenance through both the successful-call record and the machine-readable {bf:e(q)} scalar behind the realized beta/omitted-intercept z-varying surface."
+                    di as error "  Reason: current hddid results publish the sieve-order provenance through both the successful-call record and the machine-readable {bf:e(q)} scalar behind the realized beta/nonparametric f(z) surface."
                     exit 498
                 }
             }
@@ -4064,7 +4064,7 @@ program define hddid_estat
         }
         else if `_current_result_surface' {
             di as error "{bf:hddid}: current results require stored e(N)"
-            di as error "  Reason: current hddid results publish the retained post-trim sample count that anchors the stored beta/omitted-intercept z-varying surface and fold accounting."
+            di as error "  Reason: current hddid results publish the retained post-trim sample count that anchors the stored beta/nonparametric f(z) surface and fold accounting."
             exit 498
         }
         if `_has_n_trimmed' {
@@ -4663,13 +4663,13 @@ program define hddid_estat
         capture confirm matrix e(gdebias)
         if _rc != 0 {
             di as error "{bf:hddid}: current results require stored e(gdebias)"
-            di as error "  Reason: current hddid postestimation guidance points users to the published nonparametric surface, so it will not advertise a malformed current surface that omits the debiased omitted-intercept z-varying values."
+            di as error "  Reason: current hddid postestimation guidance points users to the published nonparametric surface, so it will not advertise a malformed current surface that omits the debiased nonparametric values."
             exit 498
         }
         capture confirm matrix e(stdg)
         if _rc != 0 {
             di as error "{bf:hddid}: current results require stored e(stdg)"
-            di as error "  Reason: current hddid postestimation guidance points users to the published nonparametric surface, so it will not advertise a malformed current surface that omits the posted omitted-intercept z-varying standard errors."
+            di as error "  Reason: current hddid postestimation guidance points users to the published nonparametric surface, so it will not advertise a malformed current surface that omits the posted nonparametric standard errors."
             exit 498
         }
         capture confirm matrix e(z0)
@@ -4752,7 +4752,7 @@ program define hddid_estat
                 di as error "  Current postestimation found stored support = [" ///
                     %12.8g `_z_support_min' ", " %12.8g `_z_support_max' ///
                     "] and out-of-support e(z0) point(s):`_tri_z0_outside_disp'"
-                di as error "  Reason: the published trigonometric basis is defined on the support-normalized coordinate, so current postestimation guidance cannot advertise the omitted-intercept z-varying surface off that stored domain."
+                di as error "  Reason: the published trigonometric basis is defined on the support-normalized coordinate, so current postestimation guidance cannot advertise the nonparametric f(z) surface off that stored domain."
                 exit 498
             }
         }
@@ -4849,9 +4849,9 @@ program define hddid_estat
     di as error "  After {bf:estimates use}, rely on the stored {bf:e()} result surface."
     di as error "  A live retained-sample count may no longer be available there."
     di as error "  Inspect {bf:e(b)}, {bf:e(V)}, {bf:e(xdebias)}, and {bf:e(stdx)} for the beta block."
-    di as error "  Inspect {bf:e(gdebias)}, {bf:e(stdg)}, and {bf:e(z0)} for the stored omitted-intercept z-varying surface."
+    di as error "  Inspect {bf:e(gdebias)}, {bf:e(stdg)}, {bf:e(a0)}, and {bf:e(z0)} for the stored nonparametric {bf:f(z)} surface (full level at {bf:e(z0)} = {bf:e(a0) + e(gdebias)})."
     di as error "  Inspect {bf:e(CIpoint)} for the published pointwise intervals: its first {bf:e(p)} columns are the beta block in {bf:e(xvars)} order."
-    di as error "  Its remaining {bf:e(qq)} columns are the omitted-intercept z-varying block aligned with {bf:e(z0)}."
+    di as error "  Its remaining {bf:e(qq)} columns are the centered nonparametric block aligned with {bf:e(z0)}."
     if !`_has_tc' {
         di as error "  Inspect {bf:e(CIuniform)} for the published nonparametric interval object."
         di as error "  When available, inspect {bf:e(tc)} for bootstrap critical-value provenance only."
@@ -4896,12 +4896,10 @@ program define hddid_estat
             di as error "  Inspect {bf:e(alpha)} for the shared significance level behind {bf:e(CIpoint)} and the realized {bf:e(tc)}/{bf:e(CIuniform)} interval object."
         }
     }
-    di as error "  The paper target is {bf:x0'beta + f(z0)}, but the current public nonparametric surface omits the separate intercept {bf:a0}."
-    di as error "  Form the full linear combination of {bf:x0} with the beta block in {bf:e(b)} or {bf:e(xdebias)} only in the published {bf:e(xvars)} order."
-    di as error "  Use {bf:e(gdebias)} only for centered comparisons on the stored {bf:e(z0)} grid."
-    di as error "  because {bf:hddid} does not currently publish {bf:e(a0)}, {bf:e(gdebias)} alone does not recover a full ATT/{bf:f(z0)} level."
+    di as error "  The paper target is {bf:x0'beta + f(z0)}.  Form the linear combination of {bf:x0} with the beta block {bf:e(b)} or {bf:e(xdebias)} in the published {bf:e(xvars)} order; the full nonparametric level at {bf:e(z0)} is {bf:e(a0) + e(gdebias)}."
+    di as error "  For observation-level predictions, use {bf:predict} {it:newvar} {bf:[, xb|fz|tau]}."
     if !`_has_tc' {
-        di as error "  Treat {bf:e(CIuniform)} as the published nonparametric interval object, i.e. the published lower/upper interval object on the stored omitted-intercept z-varying surface."
+        di as error "  Treat {bf:e(CIuniform)} as the published nonparametric interval object, i.e. the published lower/upper interval object on the stored nonparametric f(z) surface."
         di as error "  Legacy saved results without {bf:e(tc)} keep that posted object but do not expose the duplicate bootstrap critical-value provenance behind it."
     }
     else {
@@ -4912,12 +4910,11 @@ program define hddid_estat
         }
         else {
             di as error "  Treat {bf:e(CIuniform)} as the published nonparametric interval object implied by {bf:e(gdebias)}, {bf:e(stdg)}, and {bf:e(tc)}."
-            di as error "  The current {bf:e(tc)} object records the ordered lower/upper bootstrap critical-value provenance behind that posted interval object."
-            di as error "  Under the current path, those stored endpoints are the rowwise-envelope lower/upper studentized-process pair {bf:(min_j lower_j, max_j upper_j)}."
-            di as error "  Saved results that also store e(tc) carry the same ordered lower/upper bootstrap provenance through that posted interval object."
-            di as error "  Interpret this as ordered lower/upper bootstrap critical-value provenance, not a symmetric cutoff pair."
+            di as error "  The current {bf:e(tc)} object records the paper Theorem 5.2 sup-quantile critical value as the symmetric pair {bf:(-c*, +c*)} with {bf:c* = q_{1-alpha}(max_j |T_j*|)}."
+            di as error "  The legacy rowwise-envelope pair {bf:(min_j lower_j, max_j upper_j)} is retained as {bf:e(tc_env)} (and {bf:e(CIuniform_env)}) for backward-compatible inspection only."
+            di as error "  Saved results that also store e(tc) carry this same sup-quantile critical-value provenance through that posted interval object."
             if `_tc_same_sign' {
-                di as error "  Caveat: same-sign e(tc) can place the published CIuniform object entirely above or below the omitted-intercept z-varying surface."
+                di as error "  Caveat: same-sign e(tc) can place the published CIuniform object entirely above or below the nonparametric f(z) surface."
                 // Retired tc traceability token kept for legacy regression coverage only:
                 // same-sign e(tc) can place the published CIuniform object entirely above or below f(z0)
             }

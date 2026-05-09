@@ -1,4 +1,3 @@
-/*! version 1.0.0 */
 capture program drop _hddid_disp_beta_coords
 capture program drop _hddid_disp_preflight
 capture program drop _hddid_display
@@ -78,8 +77,7 @@ program define _hddid_disp_preflight
 end
 
 program define _hddid_display
-    // Replay reads only posted e() objects and assumes their column stripes
-    // already match the z0 grid stored at estimation time.
+    // Replay reads posted e() objects; column stripes match the z0 grid stored at estimation.
     quietly _hddid_disp_beta_coords
     local xvars `"`r(coords)'"'
     capture confirm scalar e(p)
@@ -551,11 +549,7 @@ program define _hddid_display
             exit 498
         }
     }
-    // Current and legacy replay are defined by the posted beta/f(z0) objects.
-    // Stata wrapper labels such as e(predict), e(estat_cmd),
-    // e(marginsnotok), e(vce), or e(vcetype) are useful for routing and
-    // display, but replay can still show a coherent stored estimator surface
-    // when only those wrapper labels are absent or malformed.
+    // Replay is defined by the posted beta and f(z0) objects.
     if `_current_result_surface_disp' {
         local _predict_disp `"`e(predict)'"'
         local _predict_disp = strtrim(`"`_predict_disp'"')
@@ -572,32 +566,22 @@ program define _hddid_display
         }
         local _vce_disp `"`e(vce)'"'
         local _vce_disp = strtrim(`"`_vce_disp'"')
-        // e(vce) is only the machine-readable variance tag paired with the
-        // already-posted covariance surface e(V); replay can therefore fall
-        // back to the canonical HDDID tag when it is absent or malformed.
+        // e(vce) defaults to robust when absent or malformed.
         if `"`_vce_disp'"' != "robust" {
             local _vce_disp "robust"
         }
         local _vcetype_disp `"`e(vcetype)'"'
         local _vcetype_disp = strtrim(`"`_vcetype_disp'"')
-        // e(vcetype) is only the human-readable display label paired with the
-        // already-posted covariance surface e(V); replay can therefore fall
-        // back to the canonical HDDID label when it is absent or malformed.
+        // e(vcetype) defaults to Robust when absent or malformed.
         if `"`_vcetype_disp'"' != "Robust" {
             local _vcetype_disp "Robust"
         }
     }
     local _properties_disp `"`e(properties)'"'
     local _properties_disp : list retokenize _properties_disp
-    // e(properties) is only Stata wrapper capability metadata.  The paper and
-    // hddid-r define the replayed HDDID surface through the posted numeric
-    // objects e(b), e(V), e(xdebias), e(gdebias), e(CIpoint), and e(CIuniform),
-    // so coherent saved results may still replay even when the capability label
-    // is absent or malformed.
-    // The stored outer-split count pins fold assignment before retained-sample
-    // aggregation. Legacy surfaces and current nofirst surfaces only need that
-    // broader split to cover the retained sample e(N), but current internal
-    // surfaces pin the split on the pretrim score sample e(N_pretrim).
+    // e(properties) is display metadata; the estimator surface is defined by
+    // e(b), e(V), e(xdebias), e(gdebias), e(CIpoint), and e(CIuniform).
+    // e(N_outer_split) pins fold assignment before retained-sample aggregation.
     local _N_outer_split_floor_disp = `_N_disp'
     local _N_outer_split_floor_label "e(N)"
     local _has_N_outer_split_disp 0
@@ -706,10 +690,7 @@ program define _hddid_display
             local _replay_role_data_present 0
         }
     }
-    // Replay is display-only over the posted e() surface. A live e(sample)
-    // count is therefore at most informational: the current data may have
-    // been subsetted or otherwise changed since estimation while the stored
-    // result surface remains internally coherent.
+    // Replay is display-only over the posted e() surface; e(sample) is informational.
     local _replay_linesize = c(linesize)
     local _cmdline_disp `"`e(cmdline)'"'
     local _cmdline_probe = strtrim(`"`_cmdline_disp'"')
@@ -754,9 +735,7 @@ program define _hddid_display
     local _cmdline_comma_disp = 0
     local _cmdline_dup_role_opts = 0
     if `"`_cmdline_probe'"' != "" {
-        // Stata command syntax accepts tabs/newlines as whitespace. Normalize
-        // those before parsing replay provenance so legal whitespace spelling
-        // choices do not corrupt the stored role mapping contract.
+        // Normalize whitespace before parsing e(cmdline).
         local _cmdline_parse_disp = ///
             subinstr(`"`_cmdline_parse_disp'"', char(9), " ", .)
         local _cmdline_parse_disp = ///
@@ -773,11 +752,7 @@ program define _hddid_display
     if regexm(`"`_cmdline_lc_disp'"', "^[ ]*hddid[ ]+([^, ]+)") {
         local _cmdline_depvar_disp = strtrim(regexs(1))
     }
-    // Legacy cmdline fallback must inspect only the option list after the
-    // comma. Positional text such as a depvar literally named nofirst does not
-    // encode the first-stage path. Accept the same legal TREat()
-    // abbreviations as formal syntax (tr()/tre()/trea()/treat()) while avoiding
-    // escaped-parenthesis regex syntax that Stata's parser rejects.
+    // First-stage path is encoded only in the option list after the comma.
     if `"`_cmdline_probe'"' != "" {
         local _cmdline_has_nofirst_disp = ///
             regexm(`"`_cmdline_opts_disp'"', ///
@@ -1408,14 +1383,11 @@ program define _hddid_display
         if `_cmdline_method_mismatch_disp' | `_cmdline_q_mismatch_disp' {
             di as error "{bf:hddid}: current results with stored e(cmdline) method()/q() provenance require stored e(method) and e(q) to match"
             di as error "  Replay found {bf:e(cmdline)} = {bf:`_cmdline_disp'} but stored {bf:e(method)} = {bf:`_stored_method_cmdline_disp'} and {bf:e(q)} = {bf:`_stored_q_cmdline_disp'}."
-            di as error "  Reason: current hddid results publish sieve-basis provenance through both the successful-call record and the machine-readable {bf:e(method)} / {bf:e(q)} metadata behind the realized beta and omitted-intercept z-varying surface."
+            di as error "  Reason: current hddid results publish sieve-basis provenance through both the successful-call record and the machine-readable {bf:e(method)} / {bf:e(q)} metadata behind the realized beta and nonparametric f(z) surface."
             exit 498
         }
     }
-    // Replay must also honor official defaults when the current successful
-    // call record omits method()/q(). The earlier pre-parse summary block
-    // cannot enforce these omission defaults because cmdline method/q locals
-    // are not populated until this replay-side parser runs.
+    // Honor official defaults when e(cmdline) omits method()/q().
     if `_current_result_surface_disp' & strtrim(`"`_cmdline_disp'"') != "" & ///
         `"`_cmdline_depvar_disp'"' != "" & `_cmd_has_roles_disp' {
         if `_cmdline_has_method_disp' == 0 & ///
@@ -1440,8 +1412,7 @@ program define _hddid_display
             exit 498
         }
         if `"`_cmdline_probe'"' != "" {
-            // When cmdline is present, validate that its nuisance-path and role
-            // provenance agree with the machine-readable replay metadata.
+            // Validate that e(cmdline) role provenance agrees with stored e() metadata.
             if `_cmdline_dup_role_opts' {
                 di as error "{bf:hddid}: stored e(cmdline) must encode each treat()/x()/z() role option at most once"
                 di as error "  Replay found duplicated role provenance in e(cmdline) = {bf:`_cmdline_disp'}"
@@ -1554,12 +1525,8 @@ program define _hddid_display
         local _cmdline_xvars_cmp_disp : list retokenize _cmdline_xvars_cmp_disp
         local _cmdline_xvars_raw_lc `"`_cmdline_xvars_cmp_disp'"'
         local _cmdline_zvar_cmp_disp = lower(strtrim(`"`_cmdline_zvar_disp'"'))
-        // When the current data still contain the referenced variables,
-        // resolve legal Stata abbreviations before comparing provenance names
-        // with the published role metadata; preserve x() order as typed.
-        // If those variables are no longer in memory (for example after
-        // estimates use), fall back to the published full role metadata and
-        // accept legal prefix abbreviations as pure cmdline spelling choices.
+        // Resolve Stata abbreviations against stored role metadata when data are
+        // present; otherwise accept prefix abbreviations as cmdline spelling.
         if `_replay_role_data_present' & `"`_cmdline_depvar_disp'"' != "" {
             capture unab _cmdline_depvar_canon_disp : `_cmdline_depvar_disp'
             if _rc == 0 {
@@ -1639,19 +1606,8 @@ program define _hddid_display
             local _xrange_needs_data_order_disp 0
             local _xraw = lower(strtrim(`"`_cmdline_xvars_disp'"'))
             local _xraw : list retokenize _xraw
-            // estimates use can replay posted results without the original
-            // data in memory, so recreate legal x() wildcard syntax from the
-            // published xvars metadata when unab cannot expand cmdline
-            // provenance such as x(rep*). Stata varlist ranges instead depend
-            // on the original dataset order. Without the live dataset, replay
-            // cannot prove that a range token still denotes exactly the
-            // published x() block, so current results fail closed on that
-            // ambiguous provenance instead of widening the saved-results
-            // identity from the posted e(xvars) coordinates. Even when live
-            // data are present, wildcard tokens remain provenance-only: a
-            // wider current varlist (for example adding rep3 after estimation)
-            // must not widen or invalidate the stored beta-coordinate surface
-            // already pinned by e(xvars).
+            // Expand x() wildcard and range syntax against e(xvars) when unab
+            // is unavailable; fail closed on ambiguous provenance.
             foreach _xraw_tok of local _xraw {
                 if strpos(`"`_xraw_tok'"', "-") > 0 & ///
                     regexm(`"`_xraw_tok'"', "^([^ -]+)-([^ -]+)$") {
@@ -1689,13 +1645,9 @@ program define _hddid_display
                         }
                     }
                     else {
-                        // After estimates use drops the live dataset, keep a
-                        // historical range only when the published xvars block
-                        // still proves the full numeric sequence implied by
-                        // the endpoints (for example x1-x3 -> x1 x2 x3).
-                        // Bare nonnumeric ranges remain ambiguous about the
-                        // original dataset order once the data are gone, so
-                        // replay must still fail closed on those cases.
+                        // Accept a historical range only when e(xvars) proves
+                        // the full numeric sequence; fail closed on nonnumeric
+                        // ranges without live data.
                         local _xrange_sequence_checked 0
                         local _xrange_sequence_fail 0
                         if regexm(`"`_xlo_hit'"', "^(.*[^0-9]|)([0-9]+)([^0-9]*)$") {
@@ -1819,9 +1771,8 @@ program define _hddid_display
             local _cmdline_xvars_count_disp : word count `_cmdline_xvars_cmp_disp'
             local _xvars_expected_count_disp : word count `_xvars_cmd_expected'
             if `_cmdline_xvars_count_disp' == `_xvars_expected_count_disp' {
-                // x() order is canonicalized before posting e(xvars), so replay
-                // should match cmdline tokens to the published xvars by unique
-                // prefix membership rather than by their original typing order.
+                // Match cmdline x() tokens to e(xvars) by unique prefix
+                // membership rather than typing order.
                 local _cmdline_xvars_match_fail 0
                 local _cmdline_xvars_matched ""
                 foreach _cmdline_xvar of local _cmdline_xvars_cmp_disp {
@@ -1853,9 +1804,7 @@ program define _hddid_display
                     }
                 }
                 if `_cmdline_xvars_match_fail' == 0 {
-                    // Replay should normalize pure cmdline x() spelling changes
-                    // back onto the published beta-coordinate order in e(xvars),
-                    // not onto lexical varname order.
+                    // Normalize cmdline x() spelling onto the e(xvars) coordinate order.
                     local _cmdline_xvars_cmp_disp `"`_xvars_cmd_expected'"'
                 }
             }
@@ -1889,12 +1838,7 @@ program define _hddid_display
             `"`_cmdline_treat_cmp_disp'"' != `"`_treat_cmd_expected'"' {
             local _cmdline_role_mismatch = 1
         }
-        // When unab/tsunab cannot expand a cmdline range token (e.g. x1-x10
-        // after lasso2 reorders dataset variables), _cmdline_xvars_cmp_disp
-        // remains the raw range string. Skip the mismatch check in that case
-        // since the earlier range-expansion block already tried all resolution
-        // paths. A raw range that survived all expansion attempts is not a
-        // contradictory role mapping—it is an unresolvable display-time token.
+        // Skip x() mismatch check when unab cannot expand a range token.
         if `"`_cmdline_xvars_cmp_disp'"' != "" & ///
             strpos(`"`_cmdline_xvars_cmp_disp'"', "-") == 0 & ///
             !`_cmdline_xvars_has_wild_disp' {
@@ -1977,7 +1921,7 @@ program define _hddid_display
     capture confirm scalar e(secondstage_nfolds)
     if _rc {
         di as error "{bf:hddid}: replay requires stored e(secondstage_nfolds)"
-        di as error "  Reason: second-stage lasso tuning is part of the published estimator-path metadata for the posted beta and omitted-intercept z-varying objects"
+        di as error "  Reason: second-stage lasso tuning is part of the published estimator-path metadata for the posted beta and nonparametric f(z) objects"
         exit 498
     }
     local _secondstage_nfolds_disp = e(secondstage_nfolds)
@@ -1991,7 +1935,7 @@ program define _hddid_display
     capture confirm scalar e(mmatrix_nfolds)
     if _rc {
         di as error "{bf:hddid}: replay requires stored e(mmatrix_nfolds)"
-        di as error "  Reason: M-matrix tuning is part of the published debiasing-path metadata for the posted beta and omitted-intercept z-varying objects"
+        di as error "  Reason: M-matrix tuning is part of the published debiasing-path metadata for the posted beta and nonparametric f(z) objects"
         exit 498
     }
     local _mmatrix_nfolds_disp = e(mmatrix_nfolds)
@@ -2032,10 +1976,8 @@ program define _hddid_display
     local _has_clime_eff_max_disp = (_rc == 0)
     capture confirm matrix e(clime_nfolds_cv_per_fold)
     local _has_clime_pf_disp = (_rc == 0)
-    // Current multi-x postings publish the requested/realized CLIME
-    // metadata block as part of the precision-step provenance. Under p=1 the
-    // scalar precision step uses the analytic inverse, so replay may suppress
-    // the CLIME summary entirely when that optional block is absent.
+    // CLIME metadata is required when p > 1; under p = 1 the analytic
+    // inverse is used.
     local _current_clime_block_disp = (`_current_result_surface_disp' & `p' > 1)
     local _clime_block_parts_disp = ///
         `_has_clime_req_disp' + `_has_clime_eff_min_disp' + ///
@@ -2073,8 +2015,7 @@ program define _hddid_display
             exit 498
         }
     }
-    // The realized CLIME min/max summary is derived from the per-fold counts.
-    // Without the rowvector, replay cannot validate the published diagnostic.
+    // CLIME min/max summary must be validated against per-fold counts.
     if `_has_clime_pf_disp' == 0 & ///
         (`_has_clime_req_disp' | `_has_clime_eff_min_disp' | `_has_clime_eff_max_disp') {
         di as error "{bf:hddid}: replay requires stored e(clime_nfolds_cv_per_fold)"
@@ -2231,9 +2172,7 @@ program define _hddid_display
     mata: st_numscalar("`_V_rank'", rank(st_matrix("`V_disp'")))
     capture confirm scalar e(rank)
     if _rc {
-        // The covariance rank is recoverable from the posted e(V) matrix itself.
-        // Missing e(rank) therefore does not invalidate an otherwise coherent
-        // current replay surface.
+        // e(rank) is recoverable from e(V); missing e(rank) does not invalidate replay.
     }
     else if `_current_result_surface_disp' {
         local _rank_disp = e(rank)
@@ -2346,7 +2285,7 @@ program define _hddid_display
         }
         if missing(`qq') {
             di as error "{bf:hddid}: replay requires stored e(qq) or a published z0-grid width"
-            di as error "  Reason: replay needs the posted z0-grid size from stored e(qq) or e(z0) to validate the published omitted-intercept z-varying objects"
+            di as error "  Reason: replay needs the posted z0-grid size from stored e(qq) or e(z0) to validate the published nonparametric f(z) objects"
             exit 498
         }
     }
@@ -2361,7 +2300,7 @@ program define _hddid_display
     capture matrix `gdebias' = e(gdebias)
     if _rc {
         di as error "{bf:hddid}: replay requires stored e(gdebias)"
-        di as error "  Reason: the published nonparametric summary is defined by the debiased omitted-intercept z-varying estimates"
+        di as error "  Reason: the published nonparametric summary is defined by the debiased nonparametric f(z) estimates"
         exit 498
     }
     capture confirm matrix e(stdg)
@@ -2431,10 +2370,8 @@ program define _hddid_display
     local _ciuniform_names_actual : list retokenize _ciuniform_names_actual
     local _cipoint_all_names : colnames `CIpoint'
     local _cipoint_z_names_actual ""
-    // The paper and hddid-r define the nonparametric block through the numeric
-    // evaluation grid e(z0) plus aligned column order across the published
-    // omitted-intercept objects. Replay therefore does not require the Stata
-    // wrapper's e(z0) labels to numerically re-encode that same grid.
+    // The nonparametric block is defined by the numeric e(z0) grid and aligned
+    // column order; e(z0) labels need not re-encode that grid.
     forvalues j = 1/`qq' {
         local _cipoint_name_idx = `p' + `j'
         local _cipoint_name_j : word `_cipoint_name_idx' of `_cipoint_all_names'
@@ -2589,7 +2526,7 @@ program define _hddid_display
             di as error "  Replay found stored support = [" ///
                 %12.8g `_z_support_min_disp' ", " %12.8g `_z_support_max_disp' ///
                 "] and out-of-support e(z0) point(s):`_tri_z0_outside_disp'"
-            di as error "  Reason: the published trigonometric basis is defined on the support-normalized coordinate, so replay cannot display the omitted-intercept z-varying surface off that stored domain"
+            di as error "  Reason: the published trigonometric basis is defined on the support-normalized coordinate, so replay cannot display the nonparametric f(z) surface off that stored domain"
             exit 498
         }
     }
@@ -2653,12 +2590,11 @@ program define _hddid_display
 
     local _title = strtrim(`"`e(title)'"')
     if `"`_title'"' == "" {
-        // The title is human-readable display metadata, not part of the
-        // estimator-defining beta/f(z0) surface.
+        // Default title when e(title) is absent.
         local _title "Doubly Robust Semiparametric DiD with High-Dimensional Data"
     }
     di as text ""
-    // --- Header block (Stata-native two-column layout) ---
+    // --- Header ---
     di as text "{hline 78}"
     di as text "DR Semiparametric DiD" ///
         _col(49) as text "Number of obs" _col(67) "=" ///
@@ -2678,7 +2614,7 @@ program define _hddid_display
         _col(69) as result %9.0f `p'
     di as text "Sieve variable (z) = " as result "`_zvar_disp'"
 
-    // --- Parametric table (Stata-native coefficient table) ---
+    // --- Parametric table ---
     local _ci_level = round((1 - `_alpha_disp') * 100, 1)
     di as text ""
     di as text "Debiased parametric estimates (beta)"
@@ -2708,7 +2644,7 @@ program define _hddid_display
     }
     di as text "{hline 13}{c BT}{hline 64}"
 
-    // --- Nonparametric table (merged pointwise + uniform CI) ---
+    // --- Nonparametric table ---
     di as text ""
     di as text "Debiased nonparametric function f(z)"
     di as text "{hline 78}"
@@ -2730,7 +2666,7 @@ program define _hddid_display
     }
     di as text "{hline 10}{c BT}{hline 67}"
 
-    // --- Compact footer ---
+    // --- Footer ---
     di as text ""
     di as text "N = " as result `_N_disp' as text ///
         "    Folds = " as result `_k_disp' as text ///
@@ -2747,7 +2683,7 @@ program define _hddid_display
         local _footer_nboot_str "    nboot = `_nboot_disp'"
     }
     di as text "Bootstrap:`_footer_nboot_str'" as text "`_footer_seed_str'"
-    // Compact diagnostics
+    // --- Diagnostics ---
     if `_has_N_trimmed_disp' & `_N_trimmed_disp' > 0 {
         di as text "Trimmed obs: " as result `_N_trimmed_disp'
     }
@@ -2759,9 +2695,6 @@ program define _hddid_display
     if `"`_firststage_mode_disp'"' == "nofirst" {
         di as text "First stage: " as result "user-supplied (nofirst)"
     }
-    // Skip the extremely verbose N_outer_split and inner CV diagnostic blocks.
-    // These details are available via e(N_outer_split), e(N_pretrim),
-    // e(propensity_nfolds), e(outcome_nfolds), etc.
     local _show_N_outer_split_disp 0
     if 0 {
         if `_current_result_surface_disp' & ///
@@ -2926,11 +2859,11 @@ program define _hddid_display
             di as text "  Interpret e(tc)=(0,0) as the deterministic shortcut proving CIuniform collapsed to gdebias on the stored z0 grid."
         }
         else {
-            di as text "Bootstrap tc provenance (ordered lower/upper critical-value provenance behind CIuniform): tc = (" ///
+            di as text "Bootstrap tc (sup-quantile critical-value pair behind CIuniform): tc = (" ///
                 as result %21.15g `tc_disp'[1,1] as text ", " ///
                 as result %21.15g `tc_disp'[1,2] as text ")"
-            di as text "  Current path: rowwise-envelope lower/upper studentized-process pair (min_j lower_j, max_j upper_j)."
-            di as text "  Interpret this as ordered lower/upper bootstrap critical-value provenance, not a symmetric cutoff pair."
+            di as text "  Current path: paper Theorem 5.2 sup-quantile critical value c* = q_{1-alpha}(max_j |T_j*|); posted as the symmetric pair (-c*, +c*)."
+            di as text "  See e(tc_env)/e(CIuniform_env) for the legacy rowwise-envelope pair (min_j lower_j, max_j upper_j), which is generally tighter but does not give paper-proven family-wise coverage."
         }
     }
 end
