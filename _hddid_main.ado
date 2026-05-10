@@ -4287,7 +4287,7 @@ program define _hddid_publish_results, eclass
         FIRSTSTAGE(string) ///
         PROPENSITY(integer) OUTCOME(integer) SEED(string) ///
         ZSUPPORTMIN(real) ZSUPPORTMAX(real) ///
-        [STAGE1penalty(string) PREDICTSTUB(string) LAM1ratio(string asis) LAM2ratio(string asis)]
+        [STAGE1penalty(string) PREDICTSTUB(string) LAM1ratio(string asis) LAM2ratio(string asis) CITYPE(string)]
 
     local firststage = lower(strtrim(`"`firststage'"'))
     // Quote wrappers in internal producer calls do not affect metadata and
@@ -5408,12 +5408,13 @@ program define _hddid_publish_results, eclass
 
     matrix colnames `xdebias' = `xvars'
     matrix colnames `stdx' = `xvars'
-    // P1-a: paper Theorem 5.2 sup-quantile is the canonical uniform band.
-    // Promote `tcsup' / `ciuniformsup' to `e(tc)' / `e(CIuniform)' and retain
-    // the rowwise-envelope variants as `e(tc_env)' / `e(CIuniform_env)' for
-    // backward-compatible inspection (not paper-correct for joint coverage).
-    matrix colnames `tc' = tc_env_lower tc_env_upper
-    matrix colnames `tcsup' = tc_lower tc_upper
+    // P1-a: citype() controls which band is published as e(CIuniform).
+    // Default citype(envelope): rowwise-envelope is e(CIuniform), sup-quantile
+    // stored as e(CIuniform_sup) for inspection.
+    // citype(sup): paper Theorem 5.2 sup-quantile is e(CIuniform), envelope
+    // stored as e(CIuniform_env) for backward-compatible inspection.
+    local citype = strtrim(strlower(`"`citype'"'))
+    if `"`citype'"' == "" local citype "envelope"
 
     // Reuse one z0 stripe across all nonparametric outputs for column
     // alignment.
@@ -5432,11 +5433,24 @@ program define _hddid_publish_results, eclass
     ereturn matrix gdebias = `gdebias'
     ereturn matrix stdx = `stdx'
     ereturn matrix stdg = `stdg'
-    ereturn matrix tc = `tcsup'
-    ereturn matrix tc_env = `tc'
-    ereturn matrix CIpoint = `cipoint'
-    ereturn matrix CIuniform = `ciuniformsup'
-    ereturn matrix CIuniform_env = `ciuniform'
+    if "`citype'" == "sup" {
+        matrix colnames `tc' = tc_env_lower tc_env_upper
+        matrix colnames `tcsup' = tc_lower tc_upper
+        ereturn matrix tc = `tcsup'
+        ereturn matrix tc_env = `tc'
+        ereturn matrix CIpoint = `cipoint'
+        ereturn matrix CIuniform = `ciuniformsup'
+        ereturn matrix CIuniform_env = `ciuniform'
+    }
+    else {
+        matrix colnames `tc' = tc_lower tc_upper
+        matrix colnames `tcsup' = tc_sup_lower tc_sup_upper
+        ereturn matrix tc = `tc'
+        ereturn matrix tc_sup = `tcsup'
+        ereturn matrix CIpoint = `cipoint'
+        ereturn matrix CIuniform = `ciuniform'
+        ereturn matrix CIuniform_sup = `ciuniformsup'
+    }
 
     tempname _N_per_fold
     matrix `_N_per_fold' = J(1, `k', 0)
@@ -5549,6 +5563,7 @@ program define _hddid_publish_results, eclass
     ereturn local marginsnotok "_ALL"
     ereturn local firststage_mode "`firststage'"
     ereturn local method "`method'"
+    ereturn local citype "`citype'"
     ereturn local depvar "beta"
     ereturn local depvar_role "`depvarrole'"
     ereturn local treat "`treatvar'"

@@ -44,6 +44,7 @@ difference-in-differences estimator{p_end}
 {synopt:{opt alpha(#)}}significance level; default {cmd:alpha(0.1)} (90% CIs){p_end}
 {synopt:{opt nboot(#)}}Gaussian bootstrap replications; minimum 2; default {cmd:nboot(1000)}{p_end}
 {synopt:{opt seed(#)}}RNG seed for fold assignment, bootstrap, and CLIME CV; default {cmd:seed(-1)} (no reset); caller RNG restored on exit{p_end}
+{synopt:{opt citype(string)}}uniform band method: {cmd:envelope} (rowwise quantile envelope, default) or {cmd:sup} (sup-quantile, paper Theorem 5.2){p_end}
 
 {syntab:Evaluation points}
 {synopt:{opt z0(numlist)}}evaluation points for f(Z); default is unique retained values of {cmd:z}{p_end}
@@ -290,6 +291,19 @@ run, not an alias for {cmd:seed(-1)}.  When a nonnegative seed is used,
 {cmd:hddid} restores the caller's prior session RNG state on exit.
 {p_end}
 
+{phang}
+{opt citype(string)} selects the method for the published uniform confidence
+band {cmd:e(CIuniform)}.  Valid values are {cmd:envelope} (default) and
+{cmd:sup}.  Under {cmd:citype(envelope)}, the band is constructed from the
+rowwise quantile envelope of the Gaussian bootstrap, stored as
+{cmd:e(CIuniform)} with the sup-quantile alternative available as
+{cmd:e(CIuniform_sup)}.  Under {cmd:citype(sup)}, the band uses the
+paper-Theorem 5.2 sup-quantile critical value
+{it:c*} = q_{1-alpha}(max_z |T_z*|), giving family-wise coverage at the
+nominal {cmd:1 - alpha} level; the envelope alternative is available as
+{cmd:e(CIuniform_env)}.  The choice is stored in {cmd:e(citype)}.
+{p_end}
+
 {dlgtab:Evaluation points}
 
 {phang}
@@ -501,6 +515,7 @@ comparisons, combine with {cmd:e(a0)}.
 {synopt:{cmd:e(firststage_mode)}}{cmd:internal} or {cmd:nofirst}{p_end}
 {synopt:{cmd:e(stage1penalty)}}Stage-1 lasso penalty mode: {cmd:full} or {cmd:partial} (only when {cmd:e(firststage_mode)} is {cmd:internal}){p_end}
 {synopt:{cmd:e(method)}}sieve basis method ({cmd:Pol} or {cmd:Tri}){p_end}
+{synopt:{cmd:e(citype)}}uniform band method ({cmd:envelope} or {cmd:sup}){p_end}
 {synopt:{cmd:e(depvar)}}generic beta-block label ({cmd:beta}){p_end}
 {synopt:{cmd:e(depvar_role)}}original dependent variable name{p_end}
 {synopt:{cmd:e(treat)}}treatment variable name{p_end}

@@ -344,6 +344,7 @@ program define _hddid_estimate, eclass sortpreserve
           SEED(string) ///
           NBoot(integer 1000) ///
           STAGE1penalty(string) ///
+          CIType(string) ///
           VERBose ]
     if _rc != 0 {
         // Stata's syntax command requires lowercase option names.  Users may
@@ -362,6 +363,7 @@ program define _hddid_estimate, eclass sortpreserve
                 "PIhat:pihat" "PHI1hat:phi1hat" "PHI0hat:phi0hat" ///
                 "Verbose:verbose" "VERBOSE:verbose" ///
                 "STAGE1penalty:stage1penalty" "Stage1penalty:stage1penalty" "STAGE1PENALTY:stage1penalty" ///
+                "CIType:citype" "Citype:citype" "CITYPE:citype" "CItype:citype" ///
                 "Z0:z0" {
                 local _hddid_from : word 1 of `=subinstr(`"`_hddid_optpair'"', ":", " ", 1)'
                 local _hddid_to   : word 2 of `=subinstr(`"`_hddid_optpair'"', ":", " ", 1)'
@@ -443,6 +445,15 @@ program define _hddid_estimate, eclass sortpreserve
 
     if `k' < 2 {
         di as error "{bf:hddid}: k() must be >= 2, got `k'"
+        exit 198
+    }
+
+    // Validate citype() option: envelope (default) or sup.
+    if `"`citype'"' == "" local citype "envelope"
+    local citype = strtrim(strlower(`"`citype'"'))
+    if !inlist("`citype'", "envelope", "sup") {
+        di as error "{bf:hddid}: citype() must be {bf:envelope} or {bf:sup}, got {bf:`citype'}"
+        di as error "  Reason: {bf:citype()} selects the uniform confidence band method: {bf:envelope} (rowwise quantile envelope) or {bf:sup} (sup-quantile, paper Theorem 5.2)"
         exit 198
     }
 
@@ -3190,7 +3201,8 @@ program define _hddid_estimate, eclass sortpreserve
         seed(`seed') ///
         zsupportmin(`tri_zmin') ///
         zsupportmax(`tri_zmax') ///
-        stage1penalty(`stage1penalty')
+        stage1penalty(`stage1penalty') ///
+        citype(`citype')
 
     quietly _hddid_load_display_sidecar, path("`_hddid_displaysidecar'")
     _hddid_display
